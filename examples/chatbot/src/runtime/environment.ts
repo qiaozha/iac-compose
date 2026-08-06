@@ -1,0 +1,67 @@
+import { resolve } from "node:path";
+
+import {
+  optionalEnv,
+  persistEnvironmentFile,
+  readEnvironmentFile,
+  requiredEnv,
+  resolveAzureAccountContext,
+  stringEnvironment,
+  type Deployment,
+  type EnvironmentValues,
+} from "imperative-deploy";
+import { environmentRoot, stateRoot } from "./paths.js";
+
+export { optionalEnv, requiredEnv, type EnvironmentValues };
+
+export async function prepareEnvironment(deployment: Deployment): Promise<void> {
+  const name = deployment.environment ?? process.env.AZURE_ENV_NAME ?? "dev";
+  const shellValues = stringEnvironment(process.env);
+  const configuredValues = await readEnvironmentFile(
+    resolve(environmentRoot, `${name}.json`),
+  );
+  const persistedValues = await readEnvironmentFile(stateFile(name));
+
+  Object.assign(process.env, configuredValues, persistedValues, shellValues, {
+    AZURE_ENV_NAME: name,
+  });
+  process.env.AZURE_LOCATION ??= "westus2";
+
+  await deployment.deploy("resolve Azure account context", async () => {
+    const account = await resolveAzureAccountContext(deployment, {
+      subscriptionId: process.env.AZURE_SUBSCRIPTION_ID,
+      tenantId: process.env.AZURE_TENANT_ID,
+      principalId: process.env.DEVELOPER_PRINCIPAL_ID,
+      principalType: process.env.DEVELOPER_PRINCIPAL_TYPE,
+    });
+    process.env.AZURE_SUBSCRIPTION_ID = account.subscriptionId;
+    process.env.AZURE_TENANT_ID = account.tenantId;
+    process.env.DEVELOPER_PRINCIPAL_ID = account.principalId;
+    process.env.DEVELOPER_PRINCIPAL_TYPE = account.principalType;
+    await persistEnvironment(name, {
+      AZURE_SUBSCRIPTION_ID: requiredEnv("AZURE_SUBSCRIPTION_ID"),
+      AZURE_TENANT_ID: account.tenantId,
+      AZURE_LOCATION: requiredEnv("AZURE_LOCATION"),
+      DEVELOPER_PRINCIPAL_ID: account.principalId,
+      DEVELOPER_PRINCIPAL_TYPE: account.principalType,
+    });
+  });
+  if (deployment.dryRun) {
+    process.env.AZURE_SUBSCRIPTION_ID ??= "00000000-0000-0000-0000-000000000000";
+    process.env.AZURE_TENANT_ID ??= "00000000-0000-0000-0000-000000000000";
+    process.env.DEVELOPER_PRINCIPAL_ID ??= "00000000-0000-0000-0000-000000000000";
+    process.env.DEVELOPER_PRINCIPAL_TYPE ??= "User";
+    process.env.RAG_SERVICE_SCOPE ??= "api://dry-run/.default";
+  }
+}
+
+export async function persistEnvironment(
+  name: string,
+  values: EnvironmentValues,
+): Promise<void> {
+  await persistEnvironmentFile(stateFile(name), values);
+}
+
+function stateFile(name: string): string {
+  return resolve(stateRoot, `${name}.json`);
+}
