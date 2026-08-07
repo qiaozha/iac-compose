@@ -144,8 +144,8 @@ const parameterFile = createBicepParameterFile("main.bicepparam", {
     inputBackendBaseUrl: fn.readEnvironmentVariable("backendBaseUrl"),
     inputBotIdentityResourceId: fn.readEnvironmentVariable("botIdentityResourceId"),
     inputFrontendBaseUrl: fn.readEnvironmentVariable("frontendBaseUrl"),
-    autoReplyWorkflowTeamsChannelIds: fn.readEnvironmentVariable("DEPLOY_WORKFLOW_AUTOREPLYWORKFLOW_TEAMSCHANNELIDS", "19:ZK2wSwDjcdWUr_0jR1njUWFbnTCzKJ8QnyyDkNURqUE1@thread.tacv2"),
-    autoReplyWorkflowTeamsGroupId: fn.readEnvironmentVariable("DEPLOY_WORKFLOW_AUTOREPLYWORKFLOW_TEAMSGROUPID", "e33c7fe9-84fa-47c8-a288-1a23b7b92ea5"),
+    autoReplyWorkflowTeamsChannelIds: fn.readEnvironmentVariable("DEPLOY_WORKFLOW_AUTOREPLYWORKFLOW_TEAMSCHANNELIDS", "19:qeaZlwXJ0W5frHHt7IfeHDzNkS8O512OOBejQG0X7nw1@thread.tacv2"),
+    autoReplyWorkflowTeamsGroupId: fn.readEnvironmentVariable("DEPLOY_WORKFLOW_AUTOREPLYWORKFLOW_TEAMSGROUPID", "af71663c-8492-4c4a-9ac4-a3dbaa71fa7b"),
     autoReplyWorkflowFrontendAudience: fn.readEnvironmentVariable("DEPLOY_WORKFLOW_AUTOREPLYWORKFLOW_FRONTENDAUDIENCE", "https://api.botframework.com"),
   },
 });

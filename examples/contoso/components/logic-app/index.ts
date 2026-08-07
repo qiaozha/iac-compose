@@ -42,9 +42,9 @@ export async function logicApp(deployment: Deployment): Promise<void> {
 
   const validationValues = {
     "teamsGroupId":
-      process.env["DEPLOY_WORKFLOW_AUTOREPLYWORKFLOW_TEAMSGROUPID"] ?? "e33c7fe9-84fa-47c8-a288-1a23b7b92ea5",
+      process.env["DEPLOY_WORKFLOW_AUTOREPLYWORKFLOW_TEAMSGROUPID"] ?? "af71663c-8492-4c4a-9ac4-a3dbaa71fa7b",
     "teamsChannelIds": (
-      process.env["DEPLOY_WORKFLOW_AUTOREPLYWORKFLOW_TEAMSCHANNELIDS"] ?? "19:ZK2wSwDjcdWUr_0jR1njUWFbnTCzKJ8QnyyDkNURqUE1@thread.tacv2"
+      process.env["DEPLOY_WORKFLOW_AUTOREPLYWORKFLOW_TEAMSCHANNELIDS"] ?? "19:qeaZlwXJ0W5frHHt7IfeHDzNkS8O512OOBejQG0X7nw1@thread.tacv2"
     ).split(","),
     "frontendAudience":
       process.env["DEPLOY_WORKFLOW_AUTOREPLYWORKFLOW_FRONTENDAUDIENCE"] ?? "https://api.botframework.com",
@@ -61,7 +61,7 @@ export async function logicApp(deployment: Deployment): Promise<void> {
       deployment,
       "DEPLOY_RESOURCE_TEAMSCONNECTION_NAME",
     ),
-    authorizationTenantId: "70a036f6-8e4d-4615-bad6-149c02e7720d",
+    authorizationTenantId: "72f988bf-86f1-41af-91ab-2d7cd011db47",
 
   });
 }
