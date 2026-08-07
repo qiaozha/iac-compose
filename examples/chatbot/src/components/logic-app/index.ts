@@ -65,6 +65,18 @@ export async function logicApp(deployment: Deployment): Promise<void> {
     const subscription = requiredEnv("AZURE_SUBSCRIPTION_ID");
     const resourceGroup = requiredEnv("AZURE_RESOURCE_GROUP");
     const functionAppName = requiredEnv("FUNCTION_APP_NAME");
+    for (const appName of [
+      requiredEnv("AGENT_SERVER_SITE_NAME"),
+      functionAppName,
+      requiredEnv("FRONTEND_SITE_NAME"),
+    ]) {
+      await ensureLogicAppsAccessRestriction(
+        deployment,
+        subscription,
+        resourceGroup,
+        appName,
+      );
+    }
     const functionState = (
       await captureAzure(deployment, [
         "functionapp",
@@ -102,7 +114,6 @@ export async function logicApp(deployment: Deployment): Promise<void> {
       acceptedStatuses: [200, 401, 403],
     });
   });
-
   if (deployment.dryRun) {
     process.env.DEPLOY_LOGIC_APP_WORKFLOW = "true";
     await provisionLogicApp(
@@ -144,6 +155,79 @@ export async function logicApp(deployment: Deployment): Promise<void> {
       teamsTenantId,
     );
   }
+}
+
+export function logicAppsAccessRestrictionArgs(
+  subscription: string,
+  resourceGroup: string,
+  appName: string,
+): string[] {
+  return [
+    "webapp",
+    "config",
+    "access-restriction",
+    "add",
+    "--subscription",
+    subscription,
+    "--resource-group",
+    resourceGroup,
+    "--name",
+    appName,
+    "--rule-name",
+    "Allow Logic Apps",
+    "--action",
+    "Allow",
+    "--service-tag",
+    "LogicApps",
+    "--priority",
+    "100",
+  ];
+}
+
+export function logicAppsAccessRestrictionQueryArgs(
+  subscription: string,
+  resourceGroup: string,
+  appName: string,
+): string[] {
+  return [
+    "webapp",
+    "config",
+    "access-restriction",
+    "show",
+    "--subscription",
+    subscription,
+    "--resource-group",
+    resourceGroup,
+    "--name",
+    appName,
+    "--query",
+    "ipSecurityRestrictions[?ipAddress=='LogicApps'].name | [0]",
+    "--output",
+    "tsv",
+  ];
+}
+
+async function ensureLogicAppsAccessRestriction(
+  deployment: Deployment,
+  subscription: string,
+  resourceGroup: string,
+  appName: string,
+): Promise<void> {
+  const existingRule = (
+    await captureAzure(
+      deployment,
+      logicAppsAccessRestrictionQueryArgs(
+        subscription,
+        resourceGroup,
+        appName,
+      ),
+    )
+  ).trim();
+  if (existingRule) return;
+  await deployment.execute({
+    command: "az",
+    args: logicAppsAccessRestrictionArgs(subscription, resourceGroup, appName),
+  });
 }
 
 function provisionLogicApp(

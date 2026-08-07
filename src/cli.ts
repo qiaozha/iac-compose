@@ -2,18 +2,109 @@
 
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { createDeployment, type DeploymentProgram } from "./index.js";
+import {
+  createDeployment,
+  generateDeploymentCode,
+  loadResourceRequirements,
+  validateResourceRequirements,
+  type DeploymentProgram,
+} from "./index.js";
 import { importTypeScript } from "./typescript-loader.js";
 
-interface CliOptions {
+interface RunOptions {
+  command: "run";
   file: string;
   environment?: string;
   projectDirectory?: string;
+  component?: string;
   dryRun: boolean;
 }
 
+interface GenerateOptions {
+  command: "generate";
+  resourcesFile: string;
+  solutionFile: string;
+  outputDirectory: string;
+}
+
+interface ValidateOptions {
+  command: "validate";
+  resourcesFile: string;
+  subscriptionId?: string;
+  tenantId?: string;
+  principalId?: string;
+  principalType?: string;
+  resourceGroup?: string;
+  scope?: string;
+  grant: boolean;
+}
+
+type CliOptions = RunOptions | GenerateOptions | ValidateOptions;
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
+  if (options.command === "generate") {
+    const result = await generateDeploymentCode({
+      resourcesFile: options.resourcesFile,
+      solutionFile: options.solutionFile,
+      outputDirectory: options.outputDirectory,
+    });
+    console.log(
+      `[deploy-js] generated ${result.files.length} files in ${resolve(options.outputDirectory)}`,
+    );
+    console.log(`[deploy-js] component order: ${result.components.join(" -> ")}`);
+    return;
+  }
+  if (options.command === "validate") {
+    const requirements = await loadResourceRequirements(options.resourcesFile);
+    const result = await validateResourceRequirements(createDeployment(), {
+      requirements,
+      subscriptionId:
+        options.subscriptionId ?? process.env.AZURE_SUBSCRIPTION_ID,
+      tenantId: options.tenantId ?? process.env.AZURE_TENANT_ID,
+      principalId: options.principalId ?? process.env.AZURE_PRINCIPAL_ID,
+      principalType:
+        options.principalType ?? process.env.AZURE_PRINCIPAL_TYPE,
+      resourceGroup:
+        options.resourceGroup ?? process.env.AZURE_RESOURCE_GROUP,
+      scope: options.scope,
+      grant: options.grant,
+    });
+    for (const provider of result.providers) {
+      console.log(
+        `[deploy-js] provider ${provider.namespace}: ${provider.registrationState}`,
+      );
+    }
+    for (const role of result.roles) {
+      console.log(
+        `[deploy-js] role ${role.role}: ${role.granted ? "granted" : role.present ? "present" : "missing"}`,
+      );
+    }
+    const unregistered = result.providers.filter(
+      (provider) => provider.registrationState !== "Registered",
+    );
+    const missingRoles = result.roles.filter((role) => !role.present);
+    if (unregistered.length > 0 || missingRoles.length > 0) {
+      const problems = [
+        ...(unregistered.length > 0
+          ? [`unregistered providers: ${unregistered.map(({ namespace }) => namespace).join(", ")}`]
+          : []),
+        ...(missingRoles.length > 0
+          ? [`missing roles: ${missingRoles.map(({ role }) => role).join(", ")}`]
+          : []),
+      ];
+      throw new Error(
+        `Validation failed for '${result.scope}': ${problems.join("; ")}.` +
+          (missingRoles.length > 0 && !options.grant
+            ? " Rerun with --grant to assign missing roles."
+            : ""),
+      );
+    }
+    console.log(
+      `[deploy-js] validated deployment principal ${result.principalId} at ${result.scope}`,
+    );
+    return;
+  }
   const file = resolve(options.file);
   const module = (await importTypeScript(pathToFileURL(file).href)) as {
     default?: DeploymentProgram;
@@ -25,26 +116,35 @@ async function main(): Promise<void> {
   const deployment = createDeployment({
     projectDirectory: options.projectDirectory,
     environment: options.environment,
+    component: options.component,
     dryRun: options.dryRun,
   });
   await module.default(deployment);
 }
 
 function parseArgs(args: readonly string[]): CliOptions {
+  if (args[0] === "generate") return parseGenerateArgs(args.slice(1));
+  if (args[0] === "validate") return parseValidateArgs(args.slice(1));
+  return parseRunArgs(args[0] === "run" ? args.slice(1) : args);
+}
+
+function parseRunArgs(args: readonly string[]): RunOptions {
   let file: string | undefined;
   let environment: string | undefined;
   let projectDirectory: string | undefined;
+  let component: string | undefined;
   let dryRun = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
-    if (argument === "run") continue;
     if (argument === "--dry-run") {
       dryRun = true;
     } else if (argument === "-e" || argument === "--environment") {
       environment = requiredValue(args, ++index, argument);
     } else if (argument === "-C" || argument === "--cwd") {
       projectDirectory = requiredValue(args, ++index, argument);
+    } else if (argument === "-c" || argument === "--component") {
+      component = requiredValue(args, ++index, argument);
     } else if (argument === "-h" || argument === "--help") {
       printHelp();
       process.exit(0);
@@ -61,7 +161,112 @@ function parseArgs(args: readonly string[]): CliOptions {
     printHelp();
     throw new Error("A deployment file is required.");
   }
-  return { file, environment, projectDirectory, dryRun };
+  return {
+    command: "run",
+    file,
+    environment,
+    projectDirectory,
+    component,
+    dryRun,
+  };
+}
+
+function parseGenerateArgs(args: readonly string[]): GenerateOptions {
+  let resourcesFile: string | undefined;
+  let solutionFile: string | undefined;
+  let outputDirectory = "deployment";
+
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "-r" || argument === "--resources") {
+      resourcesFile = requiredValue(args, ++index, argument);
+    } else if (argument === "-s" || argument === "--solution") {
+      solutionFile = requiredValue(args, ++index, argument);
+    } else if (argument === "-o" || argument === "--output") {
+      outputDirectory = requiredValue(args, ++index, argument);
+    } else if (argument === "-h" || argument === "--help") {
+      printGenerateHelp();
+      process.exit(0);
+    } else if (argument?.startsWith("-")) {
+      throw new Error(`Unknown option: ${argument}`);
+    } else if (!resourcesFile) {
+      resourcesFile = argument;
+    } else if (!solutionFile) {
+      solutionFile = argument;
+    } else {
+      throw new Error(`Unexpected argument: ${argument}`);
+    }
+  }
+
+  if (!resourcesFile || !solutionFile) {
+    printGenerateHelp();
+    throw new Error("Resource requirements and solution files are required.");
+  }
+  return {
+    command: "generate",
+    resourcesFile: resolve(resourcesFile),
+    solutionFile: resolve(solutionFile),
+    outputDirectory: resolve(outputDirectory),
+  };
+}
+
+function parseValidateArgs(args: readonly string[]): ValidateOptions {
+  let resourcesFile: string | undefined;
+  let subscriptionId: string | undefined;
+  let tenantId: string | undefined;
+  let principalId: string | undefined;
+  let principalType: string | undefined;
+  let resourceGroup: string | undefined;
+  let scope: string | undefined;
+  let grant = false;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "-r" || argument === "--resources") {
+      resourcesFile = requiredValue(args, ++index, argument);
+    } else if (argument === "--subscription") {
+      subscriptionId = requiredValue(args, ++index, argument);
+    } else if (argument === "--tenant") {
+      tenantId = requiredValue(args, ++index, argument);
+    } else if (argument === "--principal-id") {
+      principalId = requiredValue(args, ++index, argument);
+    } else if (argument === "--principal-type") {
+      principalType = requiredValue(args, ++index, argument);
+    } else if (argument === "-g" || argument === "--resource-group") {
+      resourceGroup = requiredValue(args, ++index, argument);
+    } else if (argument === "--scope") {
+      scope = requiredValue(args, ++index, argument);
+    } else if (argument === "--grant") {
+      grant = true;
+    } else if (argument === "-h" || argument === "--help") {
+      printValidateHelp();
+      process.exit(0);
+    } else if (argument?.startsWith("-")) {
+      throw new Error(`Unknown option: ${argument}`);
+    } else if (!resourcesFile) {
+      resourcesFile = argument;
+    } else {
+      throw new Error(`Unexpected argument: ${argument}`);
+    }
+  }
+  if (!resourcesFile) {
+    printValidateHelp();
+    throw new Error("A resource requirements file is required.");
+  }
+  if (resourceGroup && scope) {
+    throw new Error("Specify either --resource-group or --scope, not both.");
+  }
+  return {
+    command: "validate",
+    resourcesFile: resolve(resourcesFile),
+    subscriptionId,
+    tenantId,
+    principalId,
+    principalType,
+    resourceGroup,
+    scope,
+    grant,
+  };
 }
 
 function requiredValue(args: readonly string[], index: number, option: string): string {
@@ -71,13 +276,44 @@ function requiredValue(args: readonly string[], index: number, option: string): 
 }
 
 function printHelp(): void {
-  console.log(`Usage: deploy-js run <deployment.ts> [options]
+  console.log(`Usage:
+  deploy-js run <deployment.ts> [options]
+  deploy-js generate --resources <requirements.json> --solution <solution.json> [options]
+  deploy-js validate --resources <requirements.json> [options]
 
-Options:
+Run options:
   -e, --environment <name>  Select the deployment environment
   -C, --cwd <directory>     Set the deployment working directory
+  -c, --component <name>    Run one deployment-defined component
       --dry-run             Print ordered steps without side effects
   -h, --help                Show this help`);
+}
+
+function printGenerateHelp(): void {
+  console.log(`Usage: deploy-js generate [options]
+
+Options:
+  -r, --resources <file>     Resource requirements JSON file
+  -s, --solution <file>      Deployment solution JSON file
+  -o, --output <directory>   Generated source directory (default: deployment)
+  -h, --help                 Show this help
+
+The two input files may also be passed positionally in resources, solution order.`);
+}
+
+function printValidateHelp(): void {
+  console.log(`Usage: deploy-js validate --resources <requirements.json> [options]
+
+Options:
+  -r, --resources <file>       Resource requirements JSON file
+      --subscription <id>      Azure subscription (defaults to active account)
+      --tenant <id>            Require the subscription to use this tenant
+      --principal-id <id>      Deployment principal object ID (defaults to signed-in user)
+      --principal-type <type>  Azure principal type (default: User)
+  -g, --resource-group <name>  Validate at this resource-group scope
+      --scope <resource-id>    Validate at an explicit Azure scope
+      --grant                  Assign missing deployment data-plane roles
+  -h, --help                   Show this help`);
 }
 
 main().catch((error: unknown) => {

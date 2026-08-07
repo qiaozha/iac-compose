@@ -1,6 +1,17 @@
 import type { Deployment } from "./index.js";
 import { createAzdProject } from "./azd.js";
 
+const builtInRoleDefinitionIds: Readonly<Record<string, string>> = {
+  AcrPull: "7f951dda-4ed3-4680-a7ca-43fe172d538d",
+  AcrPush: "8311e382-0749-4cb8-b61a-304f252e45ec",
+  "App Configuration Data Owner": "5ae67dd6-50cb-40e7-96ff-dc2bfa4b606b",
+  "App Configuration Data Reader": "516239f1-63e1-4d78-a4de-a74fb236a071",
+  "Azure AI Developer": "64702f94-c441-49e6-a78b-ef80e0188fee",
+  "Azure AI User": "53ca6127-db72-4b80-b1b0-d745d6d5456d",
+  "Foundry User": "53ca6127-db72-4b80-b1b0-d745d6d5456d",
+  "Storage Blob Data Contributor": "ba92f5b4-2d11-453d-a403-e96b0029c9fe",
+};
+
 export async function runAzure(
   deployment: Deployment,
   args: readonly string[],
@@ -228,6 +239,7 @@ export interface AzureRoleAssignmentOptions {
   principalType?: string;
   role: string;
   scope: string;
+  includeInherited?: boolean;
 }
 
 export interface AzureResourceGroupOptions {
@@ -259,25 +271,28 @@ export async function ensureResourceGroup(
 export async function ensureRoleAssignment(
   deployment: Deployment,
   options: AzureRoleAssignmentOptions,
-): Promise<void> {
+): Promise<boolean> {
+  const role = builtInRoleDefinitionIds[options.role] ?? options.role;
+  const listArgs = [
+    "role",
+    "assignment",
+    "list",
+    "--assignee",
+    options.principalId,
+    "--role",
+    role,
+    "--scope",
+    options.scope,
+    ...(options.includeInherited ? ["--include-inherited"] : []),
+    "--query",
+    "[0].id",
+    "--output",
+    "tsv",
+  ];
   const existing = (
-    await captureAzure(deployment, [
-      "role",
-      "assignment",
-      "list",
-      "--assignee",
-      options.principalId,
-      "--role",
-      options.role,
-      "--scope",
-      options.scope,
-      "--query",
-      "[0].id",
-      "--output",
-      "tsv",
-    ])
+    await captureAzure(deployment, listArgs)
   ).trim();
-  if (existing) return;
+  if (existing) return false;
   await runAzure(deployment, [
     "role",
     "assignment",
@@ -287,12 +302,13 @@ export async function ensureRoleAssignment(
     "--assignee-principal-type",
     options.principalType ?? "ServicePrincipal",
     "--role",
-    options.role,
+    role,
     "--scope",
     options.scope,
     "--output",
     "none",
   ]);
+  return true;
 }
 
 export interface AzureAccountContextOptions {
@@ -300,6 +316,16 @@ export interface AzureAccountContextOptions {
   tenantId?: string;
   principalId?: string;
   principalType?: string;
+}
+
+export interface AzureSubscriptionContextOptions {
+  subscriptionId?: string;
+  tenantId?: string;
+}
+
+export interface AzureSubscriptionContext {
+  subscriptionId: string;
+  tenantId: string;
 }
 
 export interface AzureAccountContext {
@@ -313,6 +339,34 @@ export async function resolveAzureAccountContext(
   deployment: Deployment,
   options: AzureAccountContextOptions = {},
 ): Promise<AzureAccountContext> {
+  const subscription = await resolveAzureSubscriptionContext(
+    deployment,
+    options,
+  );
+  const principalId =
+    options.principalId?.trim() ||
+    (
+      await captureAzure(deployment, [
+        "ad",
+        "signed-in-user",
+        "show",
+        "--query",
+        "id",
+        "--output",
+        "tsv",
+      ])
+    ).trim();
+  return {
+    ...subscription,
+    principalId,
+    principalType: options.principalType?.trim() || "User",
+  };
+}
+
+export async function resolveAzureSubscriptionContext(
+  deployment: Deployment,
+  options: AzureSubscriptionContextOptions = {},
+): Promise<AzureSubscriptionContext> {
   let subscriptionId = options.subscriptionId?.trim();
   if (subscriptionId) {
     await runAzure(deployment, [
@@ -349,25 +403,7 @@ export async function resolveAzureAccountContext(
         `not configured tenant '${options.tenantId.trim()}'.`,
     );
   }
-  const principalId =
-    options.principalId?.trim() ||
-    (
-      await captureAzure(deployment, [
-        "ad",
-        "signed-in-user",
-        "show",
-        "--query",
-        "id",
-        "--output",
-        "tsv",
-      ])
-    ).trim();
-  return {
-    subscriptionId,
-    tenantId,
-    principalId,
-    principalType: options.principalType?.trim() || "User",
-  };
+  return { subscriptionId, tenantId };
 }
 
 async function nextImageTag(

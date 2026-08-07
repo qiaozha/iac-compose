@@ -38,6 +38,9 @@ export function createLogicAppWorkflowDefinition(
     "botAudience": {
       "type": "String"
     },
+    "botId": {
+      "type": "String"
+    },
     "botIdentityResourceId": {
       "type": "String"
     },
@@ -382,7 +385,7 @@ export function createLogicAppWorkflowDefinition(
                               "identity": "@parameters('botIdentityResourceId')",
                               "type": "ManagedServiceIdentity"
                             },
-                            "body": "@json(string(body('convertActivity')))",
+                            "body": "@setProperty(json(string(body('convertActivity'))), 'recipient', setProperty(body('convertActivity')?['recipient'], 'id', concat('28:', parameters('botId'))))",
                             "headers": {
                               "Content-Type": "application/json"
                             },

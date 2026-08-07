@@ -247,7 +247,7 @@ test("chatbot installs provisioning libraries from local package tarballs", asyn
   ).filter(([name]) => name.startsWith("@azure/provisioning-"));
   assert.ok(provisioningDependencies.length > 0);
   for (const [name, value] of provisioningDependencies) {
-    assert.match(value, /^file:vendor\/azure-provisioning-.+\.tgz$/, name);
+    assert.match(value, /^file:\.\.\/\.\.\/vendor\/azure-provisioning-.+\.tgz$/, name);
     await access(resolve("examples/chatbot", value.slice("file:".length)));
   }
   await access(resolve("examples/chatbot/package-lock.json"));

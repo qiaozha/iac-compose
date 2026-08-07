@@ -46,6 +46,17 @@ test("chatbot deployment keeps the authored service lifecycle order", async () =
 
   assert.equal(positions.every((position) => position >= 0), true);
   assert.deepEqual([...positions].sort((left, right) => left - right), positions);
+  for (const component of [
+    "shared",
+    "agent",
+    "agent-server",
+    "function-app",
+    "frontend",
+    "logic-app",
+  ]) {
+    assert.match(source, new RegExp(`(?:["']${component}["']|\\b${component}\\b):`));
+  }
+  assert.match(source, /deployment\.component/);
 });
 
 test("agent owns the bot identity consumed by frontend", async () => {

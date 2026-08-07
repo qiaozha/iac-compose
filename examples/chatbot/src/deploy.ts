@@ -1,4 +1,4 @@
-import { defineDeployment } from "imperative-deploy";
+import { defineDeployment, type Deployment } from "imperative-deploy";
 import { agent } from "./components/agent/index.js";
 import { agentServer } from "./components/agent-server/index.js";
 import { frontend } from "./components/frontend/index.js";
@@ -7,8 +7,27 @@ import { logicApp } from "./components/logic-app/index.js";
 import { shared } from "./components/shared/index.js";
 import { prepareEnvironment } from "./runtime/environment.js";
 
+const componentDeployments = {
+  shared: shared,
+  agent: agent,
+  "agent-server": agentServer,
+  "function-app": functionApp,
+  frontend: frontend,
+  "logic-app": logicApp,
+} satisfies Record<string, (deployment: Deployment) => Promise<void>>;
+
 export default defineDeployment(async (deployment) => {
   await prepareEnvironment(deployment);
+  if (deployment.component) {
+    const deployComponent = componentDeployments[deployment.component];
+    if (!deployComponent) {
+      throw new Error(
+        `Unknown chatbot component '${deployment.component}'. Expected one of: ${Object.keys(componentDeployments).join(", ")}.`,
+      );
+    }
+    await deployComponent(deployment);
+    return;
+  }
   await shared(deployment);
   await agent(deployment);
   await agentServer(deployment);

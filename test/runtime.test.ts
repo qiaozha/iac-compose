@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { createDeployment } from "../src/index.js";
+import {
+  createDeployment,
+  Deployment,
+  ensureRoleAssignment,
+  provisionTeamsApplication,
+  type Command,
+} from "../src/index.js";
 
 test("dry run renders provision artifacts without running deployment actions", async () => {
   const root = await mkdtemp(join(tmpdir(), "deploy-js-dry-run-"));
@@ -57,4 +63,83 @@ test("dry run renders provision artifacts without running deployment actions", a
     "[deploy-js] DRY command: patch logic workflow",
   ]);
   assert.equal(messages.some((message) => message.includes("env new")), false);
+});
+
+test("deployment scopes preserve component selection", () => {
+  const deployment = createDeployment({ component: "logic-app" });
+
+  assert.equal(deployment.component, "logic-app");
+  assert.equal(deployment.inDirectory("nested").component, "logic-app");
+});
+
+test("role assignments use the stable Foundry role definition ID", async () => {
+  const commands: Command[] = [];
+  class RoleDeployment extends Deployment {
+    override async capture(command: Command): Promise<string> {
+      commands.push(command);
+      return "";
+    }
+
+    override async execute(command: Command): Promise<void> {
+      commands.push(command);
+    }
+  }
+
+  await ensureRoleAssignment(new RoleDeployment(), {
+    principalId: "principal-id",
+    role: "Azure AI User",
+    scope: "/subscriptions/subscription-id/resourceGroups/resources",
+  });
+
+  assert.equal(commands.length, 2);
+  for (const command of commands) {
+    const roleIndex = command.args?.indexOf("--role") ?? -1;
+    assert.equal(
+      command.args?.[roleIndex + 1],
+      "53ca6127-db72-4b80-b1b0-d745d6d5456d",
+    );
+  }
+});
+
+test("Teams provisioning uses the component-authored lifecycle", async () => {
+  const root = await mkdtemp(join(tmpdir(), "deploy-js-teams-"));
+  const source = join(root, "source");
+  await mkdir(join(source, "env"), { recursive: true });
+  const sourceLifecycle = `version: v1.7
+provision:
+  - uses: teamsApp/create
+  - uses: teamsApp/validateAppPackage
+`;
+  await writeFile(join(source, "teamsapp.yml"), sourceLifecycle);
+
+  class TeamsDeployment extends Deployment {
+    override async execute(command: Command): Promise<void> {
+      assert.equal(command.cwd, source);
+      assert.equal(await readFile(join(source, "teamsapp.yml"), "utf8"), sourceLifecycle);
+      const environmentFile = join(source, "env", ".env.deploy-js-dev");
+      await writeFile(
+        environmentFile,
+        `${await readFile(environmentFile, "utf8")}TEAMS_APP_ID=test-app-id\n`,
+      );
+    }
+  }
+
+  const outputs = await provisionTeamsApplication(
+    new TeamsDeployment({ environment: "dev" }),
+    {
+      component: "frontend",
+      componentDirectory: source,
+      manifestValues: { TEAMS_APP_NAME: "Test app" },
+      outputNames: ["teamsAppId"],
+    },
+  );
+
+  assert.deepEqual(outputs, {
+    TEAMS_APP_ID: "test-app-id",
+    teamsAppId: "test-app-id",
+  });
+  assert.equal(
+    await readFile(join(source, "teamsapp.yml"), "utf8"),
+    sourceLifecycle,
+  );
 });

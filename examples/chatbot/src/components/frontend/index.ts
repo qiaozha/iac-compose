@@ -17,6 +17,7 @@ import {
   frontendRoot,
   generatedFrontendProject,
 } from "../../runtime/paths.js";
+import { ensureFrontendAccessRestrictions } from "../shared/frontend-access.js";
 
 const teamsEnvironment = "deploy-js";
 
@@ -33,6 +34,9 @@ export async function frontend(deployment: Deployment): Promise<void> {
   await deployment.deploy("persist frontend infrastructure", async () => {
     await persistEnvironment(requiredEnv("AZURE_ENV_NAME"), outputs);
   });
+  await deployment.deploy("allow frontend access to agent server", async () => {
+    await ensureFrontendAccessRestrictions(deployment);
+  });
 
   if (deployment.dryRun) {
     await prepareAppServiceContainer(
@@ -48,38 +52,28 @@ export async function frontend(deployment: Deployment): Promise<void> {
     const siteName = requiredEnv("FRONTEND_SITE_NAME");
 
     const teamsEnvFile = await writeTeamsEnvironment();
-    if (process.env.SKIP_TEAMS_PROVISION !== "1") {
-      await deployment.execute({
-        command: "npx",
-        args: [
-          "--yes",
-          "@microsoft/teamsapp-cli",
-          "provision",
-          "--env",
-          teamsEnvironment,
-          "--interactive",
-          "true",
-        ],
-        cwd: frontendRoot,
-        env: { CI: "", TF_BUILD: "", TEAMSFX_INTERACTIVE: "true" },
-      });
-      if (process.env.TEAMS_PUBLISH === "1") {
-        await deployment.execute({
-          command: "npx",
-          args: [
-            "--yes",
-            "@microsoft/teamsapp-cli",
-            "publish",
-            "--env",
-            teamsEnvironment,
-            "--interactive",
-            "true",
-          ],
-          cwd: frontendRoot,
-          env: { CI: "", TF_BUILD: "", TEAMSFX_INTERACTIVE: "true" },
-        });
-      }
-    }
+    const teamsInputValues = parseEnvironment(await readFile(teamsEnvFile, "utf8"));
+    await deployment.execute({
+      command: "npx",
+      args: [
+        "--yes",
+        "@microsoft/teamsapp-cli",
+        "provision",
+        "--env",
+        teamsEnvironment,
+        "--interactive",
+        "true",
+      ],
+      cwd: frontendRoot,
+      env: {
+        CI: "",
+        TF_BUILD: "",
+        TEAMSFX_INTERACTIVE: "true",
+        ...(teamsInputValues.TEAMS_APP_ID
+          ? { TEAMS_APP_ID: teamsInputValues.TEAMS_APP_ID }
+          : {}),
+      },
+    });
     const teamsValues = parseEnvironment(await readFile(teamsEnvFile, "utf8"));
     const persisted: Record<string, string> = {
       SERVICE_FRONTEND_IMAGE_NAME: image,
@@ -127,6 +121,8 @@ async function writeTeamsEnvironment(): Promise<string> {
   for (const key of ["TEAMS_APP_ID", "TEAMS_APP_TENANT_ID", "TEAMS_APP_PUBLISHED_APP_ID"]) {
     delete values[key];
   }
+  const teamsAppId =
+    optionalEnv("TEAMS_APP_MANIFEST_ID") ?? optionalEnv("TEAMS_APP_ID");
   values = {
     ...values,
     TEAMSFX_ENV: teamsEnvironment,
@@ -139,10 +135,9 @@ async function writeTeamsEnvironment(): Promise<string> {
     AZURE_SUBSCRIPTION_ID: requiredEnv("AZURE_SUBSCRIPTION_ID"),
     AZURE_RESOURCE_GROUP_NAME: requiredEnv("AZURE_RESOURCE_GROUP"),
   };
-  for (const key of ["TEAMS_APP_ID", "TEAMS_APP_TENANT_ID"]) {
-    const value = optionalEnv(key);
-    if (value) values[key] = value;
-  }
+  if (teamsAppId) values.TEAMS_APP_ID = teamsAppId;
+  const teamsAppTenantId = optionalEnv("TEAMS_APP_TENANT_ID");
+  if (teamsAppTenantId) values.TEAMS_APP_TENANT_ID = teamsAppTenantId;
   values.TEAMS_APP_TENANT_ID ??= requiredEnv("BOT_TENANT_ID");
   await writeFile(
     outputFile,
