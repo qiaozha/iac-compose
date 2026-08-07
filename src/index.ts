@@ -31,6 +31,7 @@ export {
   ensureResourceGroup,
   ensureRoleAssignment,
   resolveAzureAccountContext,
+  resolveAzureSubscriptionContext,
   retry,
   runAzure,
   waitForHttp,
@@ -39,6 +40,8 @@ export {
   type AzureAccountContextOptions,
   type AzureRoleAssignmentOptions,
   type AzureResourceGroupOptions,
+  type AzureSubscriptionContext,
+  type AzureSubscriptionContextOptions,
   type ContainerImageOptions,
 } from "./azure.js";
 export {
@@ -49,6 +52,51 @@ export {
   stringEnvironment,
   type EnvironmentValues,
 } from "./environment.js";
+export {
+  generateDeploymentCode,
+  loadResourceRequirements,
+  type DeploymentSolution,
+  type GenerateDeploymentCodeOptions,
+  type GenerateDeploymentCodeResult,
+  type ResourceRequirement,
+  type ResourceRequirements,
+} from "./generator.js";
+export {
+  ensureDeploymentPrincipalRoles,
+  planResourceValidation,
+  validateResourceRequirements,
+  type DeploymentRoleRequirement,
+  type DeploymentRoleValidation,
+  type ResourceProviderValidation,
+  type ResourceRequirementsValidationResult,
+  type ResourceValidationPlan,
+  type ValidateResourceRequirementsOptions,
+} from "./resource-validation.js";
+export {
+  renderResourceRequirements,
+  type RenderedProvisioningFile,
+  type RenderResourceRequirementsOptions,
+  type ResourceContract,
+  type ResourceContractRequirement,
+} from "./resource-contract.js";
+export {
+  createHostedAgentManifest,
+  deployHostedAgentService,
+  deployResourceComponent,
+  enableWorkflowDeployment,
+  parseHostedAgentVersion,
+  prepareAuthorizedConnection,
+  prepareResourceRequirements,
+  provisionTeamsApplication,
+  resolveOutputBindings,
+  teamsEnvironmentName,
+  type DeployResourceComponentOptions,
+  type AuthorizedConnectionOptions,
+  type HostedAgentAccess,
+  type HostedAgentDeploymentOptions,
+  type TeamsApplicationDeploymentOptions,
+  type WorkflowDeploymentOptions,
+} from "./resource-runtime.js";
 
 export interface Command {
   command: string;
@@ -76,6 +124,7 @@ export interface ProvisionOptions {
 export interface DeploymentOptions {
   projectDirectory?: string;
   environment?: string;
+  component?: string;
   dryRun?: boolean;
   log?: (message: string) => void;
 }
@@ -100,6 +149,7 @@ export function createDeployment(options: DeploymentOptions = {}): Deployment {
 export class Deployment {
   readonly projectDirectory: string;
   readonly environment?: string;
+  readonly component?: string;
   readonly dryRun: boolean;
 
   readonly #log: (message: string) => void;
@@ -107,6 +157,7 @@ export class Deployment {
   constructor(options: DeploymentOptions = {}) {
     this.projectDirectory = resolve(options.projectDirectory ?? process.cwd());
     this.environment = options.environment;
+    this.component = options.component;
     this.dryRun = options.dryRun ?? false;
     this.#log = options.log ?? console.log;
   }
@@ -115,6 +166,7 @@ export class Deployment {
     return new Deployment({
       projectDirectory,
       environment: this.environment,
+      component: this.component,
       dryRun: this.dryRun,
       log: this.#log,
     });

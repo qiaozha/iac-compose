@@ -55,6 +55,17 @@ test("hosted agent delegates its source build to azd deploy", async () => {
   assert.doesNotMatch(source, /buildContainerImage|fromPackage|--from-package/);
 });
 
+test("agent grants the server identity Foundry runtime access", async () => {
+  const source = await readFile(
+    resolve("examples/chatbot/src/components/agent/index.ts"),
+    "utf8",
+  );
+  assert.match(source, /53ca6127-db72-4b80-b1b0-d745d6d5456d/);
+  assert.match(source, /requiredEnv\("MANAGED_IDENTITY_PRINCIPAL_ID"\)/);
+  assert.match(source, /ensureAgentServerFoundryAccess\(deployment\)/);
+  assert.match(source, /ensureRoleAssignment/);
+});
+
 test("agent status parser preserves the azd show identity contract", () => {
   assert.deepEqual(
     parseAgentVersion(

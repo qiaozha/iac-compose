@@ -21,6 +21,7 @@ import {
 import { configureServerApplication } from "../shared/identity.js";
 
 const agentName = "azure-sdk-chat-agent";
+const foundryUserRoleId = "53ca6127-db72-4b80-b1b0-d745d6d5456d";
 
 export interface AgentVersion {
   name: string;
@@ -46,6 +47,7 @@ export async function agent(deployment: Deployment): Promise<void> {
     "persist, configure, and seed agent infrastructure",
     async () => {
       await persistEnvironment(requiredEnv("AZURE_ENV_NAME"), outputs);
+      await ensureAgentServerFoundryAccess(deployment);
       await configureServerApplication(deployment);
       await seedRuntimeConfiguration(deployment);
     },
@@ -178,6 +180,18 @@ export function parseAgentVersion(output: string): AgentVersion {
     throw new Error("azd ai agent show returned an invalid agent version.");
   }
   return value as AgentVersion;
+}
+
+async function ensureAgentServerFoundryAccess(
+  deployment: Deployment,
+): Promise<void> {
+  const subscription = requiredEnv("AZURE_SUBSCRIPTION_ID");
+  const resourceGroup = requiredEnv("AZURE_RESOURCE_GROUP");
+  await ensureRoleAssignment(deployment, {
+    principalId: requiredEnv("MANAGED_IDENTITY_PRINCIPAL_ID"),
+    role: foundryUserRoleId,
+    scope: `/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/Microsoft.CognitiveServices/accounts/${requiredEnv("AI_RESOURCE_NAME")}`,
+  });
 }
 
 function requiredAzdValue(

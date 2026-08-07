@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "files": [
+    "components/agent/index.ts",
+    "components/agent/provisioning.ts",
+    "components/backend/index.ts",
+    "components/backend/provisioning.ts",
+    "components/frontend/index.ts",
+    "components/frontend/provisioning.ts",
+    "components/logic-app/index.ts",
+    "components/logic-app/provisioning.ts",
+    "components/logic-app/workflow.ts",
+    "components/shared/graph-provisioning.ts",
+    "components/shared/index.ts",
+    "components/shared/provisioning.ts",
+    "deploy.ts",
+    "package.json",
+    "runtime/environment.ts",
+    "runtime/paths.ts",
+    "tsconfig.json"
+  ]
+}

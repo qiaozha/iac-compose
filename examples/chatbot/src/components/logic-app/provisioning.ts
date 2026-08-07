@@ -64,6 +64,7 @@ const serverBaseUrl = stringParameter("serverBaseUrl");
 const serverAudience = stringParameter("serverAudience");
 const botBaseUrl = stringParameter("botBaseUrl");
 const botAudience = stringParameter("botAudience");
+const botId = stringParameter("botId");
 const storageAccountName = stringParameter("storageAccountName");
 const createTeamsConnection = stack.parameters.add(
   "createTeamsConnection",
@@ -228,6 +229,7 @@ const workflow = new Workflow(
         serverIdentityResourceId: { value: serverIdentityResourceId },
         botBaseUrl: { value: botBaseUrl },
         botAudience: { value: botAudience },
+        botId: { value: botId },
         botIdentityResourceId: { value: botIdentityResourceId },
         functionAppResourceId: { value: functionAppResourceId },
         blobStorageAccountName: { value: storageAccountName },
@@ -335,6 +337,7 @@ const parameterFile = createBicepParameterFile("main.bicepparam", {
     serverAudience: fn.readEnvironmentVariable("SERVER_AUDIENCE"),
     botBaseUrl: fn.readEnvironmentVariable("BOT_BASE_URL"),
     botAudience: fn.readEnvironmentVariable("BOT_AUDIENCE"),
+    botId: fn.readEnvironmentVariable("BOT_ID"),
     storageAccountName: fn.readEnvironmentVariable("STORAGE_ACCOUNT_NAME"),
     createTeamsConnection: fn.eq(
       fn.readEnvironmentVariable("CREATE_TEAMS_CONNECTION", "true"),

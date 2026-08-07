@@ -34,7 +34,7 @@ if (!workspaceArgument) {
 
 const exampleRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const workspaceRoot = resolve(workspaceArgument);
-const vendorRoot = resolve(exampleRoot, "vendor");
+const vendorRoot = resolve(exampleRoot, "../../vendor");
 for (const packageDirectory of packageDirectories) {
   await access(join(workspaceRoot, "packages", packageDirectory, "package.json"));
 }
