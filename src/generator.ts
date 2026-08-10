@@ -182,6 +182,7 @@ export async function generateDeploymentCode(
         solutionComponent?.kind,
         solutionComponent?.source,
         componentResources,
+        requirements.resources,
         provisioningSources.has(component),
       ),
     );
@@ -657,6 +658,7 @@ function renderComponent(
   kind: string | undefined,
   source: string | undefined,
   resources: readonly ResourceRequirement[],
+  allResources: readonly ResourceRequirement[],
   hasProvisioning: boolean,
 ): string {
   if (kind === "hosted-agent") {
@@ -681,6 +683,7 @@ function renderComponent(
     functionName,
     source,
     resources,
+    allResources,
     hasProvisioning,
   );
 }
@@ -690,6 +693,7 @@ function renderContainerComponent(
   functionName: string,
   source: string | undefined,
   resources: readonly ResourceRequirement[],
+  allResources: readonly ResourceRequirement[],
   hasProvisioning: boolean,
 ): string {
   const containers = resources.filter(
@@ -703,7 +707,32 @@ function renderContainerComponent(
     );
   }
   const resource = containers[0]!;
-  const runtimeSettings = asRecord(asRecord(resource.configuration).runtimeSettings);
+  const configuration = asRecord(resource.configuration);
+  const runtimeSettings = asRecord(configuration.runtimeSettings);
+  const ingress = asRecord(configuration.ingress);
+  const allowedServiceTags =
+    ingress.allowedServiceTags === undefined
+      ? []
+      : stringArray(
+          ingress.allowedServiceTags,
+          `${resource.id}.configuration.ingress.allowedServiceTags`,
+        );
+  const peerIngressTargets = allResources.filter((candidate) => {
+    if (candidate.kind !== "container-host" || candidate.id === resource.id) {
+      return false;
+    }
+    const candidateIngress = asRecord(
+      asRecord(candidate.configuration).ingress,
+    );
+    const allowedSourceResources =
+      candidateIngress.allowedSourceResources === undefined
+        ? []
+        : stringArray(
+            candidateIngress.allowedSourceResources,
+            `${candidate.id}.configuration.ingress.allowedSourceResources`,
+          );
+    return allowedSourceResources.includes(resource.id);
+  });
   const environmentEntries = Object.entries(runtimeSettings)
     .map(
       ([name, value]) =>
@@ -724,6 +753,40 @@ function renderContainerComponent(
   const teamsImport = teamsApplications.length === 1
     ? "\n  provisionTeamsApplication,"
     : "";
+  const ingressImports = [
+    ...(allowedServiceTags.length > 0 ? ["  ensureAppServiceIngress,"] : []),
+    ...(peerIngressTargets.length > 0
+      ? ["  ensureAppServicePeerIngress,"]
+      : []),
+  ];
+  const ingressImport =
+    ingressImports.length > 0 ? `\n${ingressImports.join("\n")}` : "";
+  const serviceTagIngressBlock =
+    allowedServiceTags.length > 0
+      ? `  await deployment.deploy(${JSON.stringify(`configure ${component} ingress`)}, async () => {
+    await ensureAppServiceIngress(deployment, {
+      resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
+      siteName: requiredEnv(${JSON.stringify(implementationOutputName(resource.id, "NAME"))}),
+      serviceTags: ${JSON.stringify(allowedServiceTags)},
+      subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
+    });
+  });
+`
+      : "";
+  const peerIngressBlock = peerIngressTargets
+    .map(
+      (target) => `  await deployment.deploy(${JSON.stringify(`configure ${resource.id} access to ${target.id}`)}, async () => {
+    await ensureAppServicePeerIngress(deployment, {
+      resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
+      sourceSiteName: requiredEnv(${JSON.stringify(implementationOutputName(resource.id, "NAME"))}),
+      targetSiteName: requiredEnv(${JSON.stringify(implementationOutputName(target.id, "NAME"))}),
+      sourceResourceName: ${JSON.stringify(resource.id)},
+      subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
+    });
+  });
+`,
+    )
+    .join("");
   const generatedProject = generatedProjectName(component);
   const pathImports = componentPathImports(component, hasProvisioning, true);
   const provisioning = componentProvisioningBlock(
@@ -735,7 +798,7 @@ function renderContainerComponent(
   return `import { resolve } from "node:path";
 
 import {
-  deployAppServiceContainer,
+  deployAppServiceContainer,${ingressImport}
   prepareAppServiceContainer,${teamsImport}
   type Deployment,
 } from "imperative-deploy";
@@ -750,7 +813,7 @@ ${pathImports}
 export async function ${functionName}(deployment: Deployment): Promise<void> {
   const outputs: Record<string, string> = {};
 ${provisioning}
-  const service = {
+${serviceTagIngressBlock}${peerIngressBlock}  const service = {
     directory: ${generatedProject},
     service: ${JSON.stringify(component)},
     ...(deployment.dryRun

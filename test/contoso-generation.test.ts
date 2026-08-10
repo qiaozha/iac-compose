@@ -120,12 +120,30 @@ test("Contoso components provision their owned resources", async () => {
     backend,
     /\{ name: "AZURE_CLIENT_ID", value: backendComputeIdentity\.properties\.clientId as any \}/,
   );
+  assert.doesNotMatch(backend, /ipSecurityRestrictions:/);
   assert.match(backend, /new Site\(/);
   assert.match(backend, /backendIdentityResourceId/);
   assert.doesNotMatch(backend, /new Bot\(|new Workflow\(/);
 
   assert.match(frontend, /new Site\(/);
   assert.match(frontend, /new Bot\(/);
+  assert.doesNotMatch(frontend, /ipSecurityRestrictions:/);
+  assert.match(backendLifecycle, /ensureAppServiceIngress/);
+  assert.match(backendLifecycle, /serviceTags: \["LogicApps"\]/);
+  assert.match(frontendLifecycle, /ensureAppServiceIngress/);
+  assert.match(
+    frontendLifecycle,
+    /serviceTags: \["LogicApps","AzureBotService"\]/,
+  );
+  assert.match(frontendLifecycle, /ensureAppServicePeerIngress/);
+  assert.match(
+    frontendLifecycle,
+    /sourceSiteName: requiredEnv\("DEPLOY_RESOURCE_FRONTENDCOMPUTE_NAME"\)/,
+  );
+  assert.match(
+    frontendLifecycle,
+    /targetSiteName: requiredEnv\("DEPLOY_RESOURCE_BACKENDCOMPUTE_NAME"\)/,
+  );
   assert.match(
     frontendLifecycle,
     /componentDirectory: resolve\(packageRoot, "components\/frontend"\)/,

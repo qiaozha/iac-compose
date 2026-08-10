@@ -7,6 +7,8 @@ import { test } from "node:test";
 import {
   createDeployment,
   Deployment,
+  ensureAppServiceIngress,
+  ensureAppServicePeerIngress,
   ensureRoleAssignment,
   provisionTeamsApplication,
   type Command,
@@ -99,6 +101,117 @@ test("role assignments use the stable Foundry role definition ID", async () => {
       "53ca6127-db72-4b80-b1b0-d745d6d5456d",
     );
   }
+});
+
+test("App Service ingress preserves existing rules and adds only missing tags", async () => {
+  const commands: Command[] = [];
+  class IngressDeployment extends Deployment {
+    override async capture(command: Command): Promise<string> {
+      commands.push(command);
+      return JSON.stringify([
+        {
+          action: "Allow",
+          ipAddress: "CorpNetPublic",
+          priority: 101,
+          tag: "ServiceTag",
+        },
+        {
+          action: "Allow",
+          ipAddress: "LogicApps",
+          priority: 200,
+          tag: "ServiceTag",
+        },
+        { action: "Deny", ipAddress: "Any", priority: 2147483647 },
+      ]);
+    }
+
+    override async execute(command: Command): Promise<void> {
+      commands.push(command);
+    }
+  }
+
+  const added = await ensureAppServiceIngress(new IngressDeployment(), {
+    resourceGroup: "resources",
+    siteName: "backend",
+    serviceTags: ["LogicApps", "AppService", "AppService"],
+    subscription: "subscription",
+  });
+
+  assert.deepEqual(added, ["AppService"]);
+  assert.equal(commands.length, 2);
+  assert.equal(commands[1]?.args?.includes("remove"), false);
+  assert.deepEqual(commands[1]?.args?.slice(-6), [
+    "--priority",
+    "201",
+    "--service-tag",
+    "AppService",
+    "--output",
+    "none",
+  ]);
+});
+
+test("App Service peer ingress allows only missing possible outbound IPs", async () => {
+  const commands: Command[] = [];
+  class PeerIngressDeployment extends Deployment {
+    override async capture(command: Command): Promise<string> {
+      commands.push(command);
+      if (command.args?.[1] === "show") {
+        return "10.0.0.1,10.0.0.2\n";
+      }
+      return JSON.stringify([
+        {
+          action: "Allow",
+          ipAddress: "CorpNetPublic",
+          priority: 101,
+          tag: "ServiceTag",
+        },
+        {
+          action: "Allow",
+          ipAddress: "LogicApps",
+          priority: 200,
+          tag: "ServiceTag",
+        },
+        {
+          action: "Allow",
+          ipAddress: "10.0.0.1/32",
+          priority: 201,
+        },
+      ]);
+    }
+
+    override async execute(command: Command): Promise<void> {
+      commands.push(command);
+    }
+  }
+
+  const added = await ensureAppServicePeerIngress(
+    new PeerIngressDeployment(),
+    {
+      resourceGroup: "resources",
+      sourceSiteName: "frontend",
+      targetSiteName: "backend",
+      sourceResourceName: "frontendCompute",
+      subscription: "subscription",
+    },
+  );
+
+  assert.deepEqual(added, ["10.0.0.2"]);
+  const addCommand = commands.find((command) =>
+    command.args?.includes("--ip-address"),
+  );
+  assert.ok(addCommand);
+  assert.equal(
+    addCommand.args?.[addCommand.args.indexOf("--name") + 1],
+    "backend",
+  );
+  assert.deepEqual(addCommand.args?.slice(-6), [
+    "--priority",
+    "202",
+    "--ip-address",
+    "10.0.0.2",
+    "--output",
+    "none",
+  ]);
 });
 
 test("Teams provisioning uses the component-authored lifecycle", async () => {

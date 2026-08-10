@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 
 import {
   deployAppServiceContainer,
+  ensureAppServiceIngress,
   prepareAppServiceContainer,
   type Deployment,
 } from "imperative-deploy";
@@ -36,6 +37,14 @@ export async function backend(deployment: Deployment): Promise<void> {
     );
   });
 
+  await deployment.deploy("configure backend ingress", async () => {
+    await ensureAppServiceIngress(deployment, {
+      resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
+      siteName: requiredEnv("DEPLOY_RESOURCE_BACKENDCOMPUTE_NAME"),
+      serviceTags: ["LogicApps"],
+      subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
+    });
+  });
   const service = {
     directory: generatedBackendProject,
     service: "backend",
