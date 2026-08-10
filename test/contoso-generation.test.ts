@@ -120,12 +120,30 @@ test("Contoso components provision their owned resources", async () => {
     backend,
     /\{ name: "AZURE_CLIENT_ID", value: backendComputeIdentity\.properties\.clientId as any \}/,
   );
+  assert.doesNotMatch(backend, /ipSecurityRestrictions:/);
   assert.match(backend, /new Site\(/);
   assert.match(backend, /backendIdentityResourceId/);
   assert.doesNotMatch(backend, /new Bot\(|new Workflow\(/);
 
   assert.match(frontend, /new Site\(/);
   assert.match(frontend, /new Bot\(/);
+  assert.doesNotMatch(frontend, /ipSecurityRestrictions:/);
+  assert.match(backendLifecycle, /ensureAppServiceIngress/);
+  assert.match(backendLifecycle, /serviceTags: \["LogicApps"\]/);
+  assert.match(frontendLifecycle, /ensureAppServiceIngress/);
+  assert.match(
+    frontendLifecycle,
+    /serviceTags: \["LogicApps","AzureBotService"\]/,
+  );
+  assert.match(frontendLifecycle, /ensureAppServicePeerIngress/);
+  assert.match(
+    frontendLifecycle,
+    /sourceSiteName: requiredEnv\("DEPLOY_RESOURCE_FRONTENDCOMPUTE_NAME"\)/,
+  );
+  assert.match(
+    frontendLifecycle,
+    /targetSiteName: requiredEnv\("DEPLOY_RESOURCE_BACKENDCOMPUTE_NAME"\)/,
+  );
   assert.match(
     frontendLifecycle,
     /componentDirectory: resolve\(packageRoot, "components\/frontend"\)/,
@@ -144,12 +162,12 @@ test("Contoso components provision their owned resources", async () => {
   assert.match(logicApp, /inputBackendIdentityResourceId/);
   assert.match(logicApp, /inputBotIdentityResourceId/);
   assert.match(logicApp, /https:\/\/api\.botframework\.com/);
-  assert.match(logicApp, /e33c7fe9-84fa-47c8-a288-1a23b7b92ea5/);
+  assert.match(logicApp, /af71663c-8492-4c4a-9ac4-a3dbaa71fa7b/);
   assert.match(
     logicApp,
-    /19:ZK2wSwDjcdWUr_0jR1njUWFbnTCzKJ8QnyyDkNURqUE1@thread\.tacv2/,
+    /19:qeaZlwXJ0W5frHHt7IfeHDzNkS8O512OOBejQG0X7nw1@thread\.tacv2/,
   );
-  assert.match(logicAppLifecycle, /authorizationTenantId: "70a036f6-8e4d-4615-bad6-149c02e7720d"/);
+  assert.match(logicAppLifecycle, /authorizationTenantId: "72f988bf-86f1-41af-91ab-2d7cd011db47"/);
   assert.doesNotMatch(logicApp, /<teams-(?:group|channel)-id>/);
   assert.doesNotMatch(logicApp, /autoReplyIdentityPrincipalId/);
   assert.doesNotMatch(logicApp, /new Site\(|new DatabaseAccount\(/);

@@ -153,6 +153,194 @@ export interface AppServiceContainerOptions {
   environment?: Readonly<Record<string, string>>;
 }
 
+export interface AppServiceIngressOptions {
+  resourceGroup: string;
+  siteName: string;
+  serviceTags: readonly string[];
+  ipAddresses?: readonly string[];
+  ruleNamePrefix?: string;
+  subscription?: string;
+  priorityStart?: number;
+}
+
+export interface AppServicePeerIngressOptions {
+  resourceGroup: string;
+  sourceSiteName: string;
+  targetSiteName: string;
+  sourceResourceName?: string;
+  subscription?: string;
+  priorityStart?: number;
+}
+
+interface AppServiceAccessRestriction {
+  action?: string;
+  ipAddress?: string;
+  priority?: number;
+  tag?: string;
+}
+
+export async function ensureAppServiceIngress(
+  deployment: Deployment,
+  options: AppServiceIngressOptions,
+): Promise<readonly string[]> {
+  const subscriptionArgs = options.subscription
+    ? ["--subscription", options.subscription]
+    : [];
+  const restrictions = await captureAzureJson<
+    readonly AppServiceAccessRestriction[]
+  >(deployment, [
+    "webapp",
+    "config",
+    "access-restriction",
+    "show",
+    ...subscriptionArgs,
+    "--resource-group",
+    options.resourceGroup,
+    "--name",
+    options.siteName,
+    "--query",
+    "ipSecurityRestrictions",
+  ]);
+  const existingTags = new Set(
+    restrictions
+      .filter(
+        (restriction) =>
+          restriction.action?.toLowerCase() === "allow" &&
+          restriction.tag?.toLowerCase() === "servicetag",
+      )
+      .map((restriction) => restriction.ipAddress?.toLowerCase())
+      .filter((tag): tag is string => tag !== undefined),
+  );
+  const existingIpAddresses = new Set(
+    restrictions
+      .filter(
+        (restriction) => restriction.action?.toLowerCase() === "allow",
+      )
+      .map((restriction) => normalizeIpAddress(restriction.ipAddress ?? ""))
+      .filter(Boolean),
+  );
+  const usedPriorities = new Set(
+    restrictions
+      .map((restriction) => restriction.priority)
+      .filter((priority): priority is number => priority !== undefined),
+  );
+  const added: string[] = [];
+  let priority = options.priorityStart ?? 200;
+  for (const serviceTag of [...new Set(options.serviceTags)]) {
+    if (existingTags.has(serviceTag.toLowerCase())) continue;
+    while (usedPriorities.has(priority)) priority += 1;
+    await runAzure(deployment, [
+      "webapp",
+      "config",
+      "access-restriction",
+      "add",
+      ...subscriptionArgs,
+      "--resource-group",
+      options.resourceGroup,
+      "--name",
+      options.siteName,
+      "--rule-name",
+      `Allow ${serviceTag}`,
+      "--action",
+      "Allow",
+      "--priority",
+      String(priority),
+      "--service-tag",
+      serviceTag,
+      "--output",
+      "none",
+    ]);
+    existingTags.add(serviceTag.toLowerCase());
+    usedPriorities.add(priority);
+    added.push(serviceTag);
+    priority += 1;
+  }
+  const ipAddresses = [
+    ...new Set(
+      (options.ipAddresses ?? [])
+        .map(normalizeIpAddress)
+        .filter(Boolean),
+    ),
+  ];
+  for (const [index, ipAddress] of ipAddresses.entries()) {
+    if (existingIpAddresses.has(ipAddress)) continue;
+    while (usedPriorities.has(priority)) priority += 1;
+    await runAzure(deployment, [
+      "webapp",
+      "config",
+      "access-restriction",
+      "add",
+      ...subscriptionArgs,
+      "--resource-group",
+      options.resourceGroup,
+      "--name",
+      options.siteName,
+      "--rule-name",
+      `${options.ruleNamePrefix ?? "Allow IP"} ${index + 1}`,
+      "--action",
+      "Allow",
+      "--priority",
+      String(priority),
+      "--ip-address",
+      ipAddress,
+      "--output",
+      "none",
+    ]);
+    existingIpAddresses.add(ipAddress);
+    usedPriorities.add(priority);
+    added.push(ipAddress);
+    priority += 1;
+  }
+  return added;
+}
+
+export async function ensureAppServicePeerIngress(
+  deployment: Deployment,
+  options: AppServicePeerIngressOptions,
+): Promise<readonly string[]> {
+  const subscriptionArgs = options.subscription
+    ? ["--subscription", options.subscription]
+    : [];
+  const possibleOutboundIpAddresses = (
+    await captureAzure(deployment, [
+      "webapp",
+      "show",
+      ...subscriptionArgs,
+      "--resource-group",
+      options.resourceGroup,
+      "--name",
+      options.sourceSiteName,
+      "--query",
+      "possibleOutboundIpAddresses",
+      "--output",
+      "tsv",
+    ])
+  )
+    .split(",")
+    .map(normalizeIpAddress)
+    .filter(Boolean);
+  if (possibleOutboundIpAddresses.length === 0) {
+    throw new Error(
+      `App Service '${options.sourceSiteName}' returned no possible outbound IP addresses.`,
+    );
+  }
+  return ensureAppServiceIngress(deployment, {
+    resourceGroup: options.resourceGroup,
+    siteName: options.targetSiteName,
+    serviceTags: [],
+    ipAddresses: possibleOutboundIpAddresses,
+    ruleNamePrefix: `Allow ${options.sourceResourceName ?? options.sourceSiteName}`,
+    ...(options.subscription ? { subscription: options.subscription } : {}),
+    ...(options.priorityStart === undefined
+      ? {}
+      : { priorityStart: options.priorityStart }),
+  });
+}
+
+function normalizeIpAddress(value: string): string {
+  return value.trim().toLowerCase().replace(/\/(?:32|128)$/, "");
+}
+
 export async function deployAppServiceContainer(
   deployment: Deployment,
   options: AppServiceContainerOptions,

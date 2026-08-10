@@ -2,6 +2,8 @@ import { resolve } from "node:path";
 
 import {
   deployAppServiceContainer,
+  ensureAppServiceIngress,
+  ensureAppServicePeerIngress,
   prepareAppServiceContainer,
   provisionTeamsApplication,
   type Deployment,
@@ -37,6 +39,23 @@ export async function frontend(deployment: Deployment): Promise<void> {
     );
   });
 
+  await deployment.deploy("configure frontend ingress", async () => {
+    await ensureAppServiceIngress(deployment, {
+      resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
+      siteName: requiredEnv("DEPLOY_RESOURCE_FRONTENDCOMPUTE_NAME"),
+      serviceTags: ["LogicApps","AzureBotService"],
+      subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
+    });
+  });
+  await deployment.deploy("configure frontendCompute access to backendCompute", async () => {
+    await ensureAppServicePeerIngress(deployment, {
+      resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
+      sourceSiteName: requiredEnv("DEPLOY_RESOURCE_FRONTENDCOMPUTE_NAME"),
+      targetSiteName: requiredEnv("DEPLOY_RESOURCE_BACKENDCOMPUTE_NAME"),
+      sourceResourceName: "frontendCompute",
+      subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
+    });
+  });
   const service = {
     directory: generatedFrontendProject,
     service: "frontend",
