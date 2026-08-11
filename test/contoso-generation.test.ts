@@ -97,6 +97,10 @@ test("Contoso components provision their owned resources", async () => {
   assert.match(agent, /name: "gpt-5\.4",\n      version: "2026-03-05"/);
   assert.match(
     agentLifecycle,
+    /const solutionLocation = requiredEnv\("AZURE_LOCATION"\)/,
+  );
+  assert.match(
+    agentLifecycle,
     /const infrastructureLocation = process\.env\.AZURE_AI_LOCATION\?\.trim\(\) \|\| "eastus"/,
   );
   assert.match(
@@ -106,6 +110,10 @@ test("Contoso components provision their owned resources", async () => {
   assert.match(
     agentLifecycle,
     /delete persistedInfrastructureOutputs\.AZURE_LOCATION/,
+  );
+  assert.match(
+    agentLifecycle,
+    /delete persistedDeploymentOutputs\.AZURE_LOCATION;\n  process\.env\.AZURE_LOCATION = solutionLocation;/,
   );
 
   assert.match(backend, /new DatabaseAccount\(/);

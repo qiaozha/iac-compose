@@ -15,6 +15,7 @@ import {
 } from "../../runtime/paths.js";
 
 export async function agent(deployment: Deployment): Promise<void> {
+  const solutionLocation = requiredEnv("AZURE_LOCATION");
   const infrastructureLocation = process.env.AZURE_AI_LOCATION?.trim() || "eastus";
   const infrastructureOutputs = await deployment.provision(
     "agent infrastructure",
@@ -78,8 +79,14 @@ export async function agent(deployment: Deployment): Promise<void> {
       : requiredEnv("DEPLOY_RESOURCE_RUNTIMECONFIGURATION_NAME"),
 
   });
+  const persistedDeploymentOutputs = { ...outputs };
+  delete persistedDeploymentOutputs.AZURE_LOCATION;
+  process.env.AZURE_LOCATION = solutionLocation;
   await deployment.deploy("persist agent deployment outputs", async () => {
-    await persistEnvironment(requiredEnv("AZURE_ENV_NAME"), outputs);
+    await persistEnvironment(
+      requiredEnv("AZURE_ENV_NAME"),
+      persistedDeploymentOutputs,
+    );
   });
 }
 

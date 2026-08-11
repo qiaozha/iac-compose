@@ -851,6 +851,9 @@ function renderHostedAgentComponent(
   resources: readonly ResourceRequirement[],
   hasProvisioning: boolean,
 ): string {
+  const ownsModelDeployment = resources.some(
+    (resource) => resource.kind === "model-deployment",
+  );
   const containers = resources.filter(
     (resource) =>
       resource.kind === "container-host" &&
@@ -935,8 +938,14 @@ ${access.join("\n")}
       ],
 ${configuration ? `    configurationStoreName: deployment.dryRun\n      ? undefined\n      : requiredEnv(${JSON.stringify(implementationOutputName(configuration.id, "NAME"))}),\n` : ""}
   });
-  await deployment.deploy("persist ${escapeTemplateLiteral(component)} deployment outputs", async () => {
-    await persistEnvironment(requiredEnv("AZURE_ENV_NAME"), outputs);
+${ownsModelDeployment ? `  const persistedDeploymentOutputs = { ...outputs };
+  delete persistedDeploymentOutputs.AZURE_LOCATION;
+  process.env.AZURE_LOCATION = solutionLocation;
+` : ""}  await deployment.deploy("persist ${escapeTemplateLiteral(component)} deployment outputs", async () => {
+    await persistEnvironment(
+      requiredEnv("AZURE_ENV_NAME"),
+      ${ownsModelDeployment ? "persistedDeploymentOutputs" : "outputs"},
+    );
   });
 }
 
@@ -1097,7 +1106,9 @@ function componentProvisioningBlock(
     ? "infrastructureLocation"
     : 'requiredEnv("AZURE_LOCATION")';
   const locationDeclaration = ownsModelDeployment
-    ? '  const infrastructureLocation = process.env.AZURE_AI_LOCATION?.trim() || "eastus";\n'
+    ? `  const solutionLocation = requiredEnv("AZURE_LOCATION");
+  const infrastructureLocation = process.env.AZURE_AI_LOCATION?.trim() || "eastus";
+`
     : "";
   const locationOverride = ownsModelDeployment
     ? "      parameters: { location: infrastructureLocation },\n"
