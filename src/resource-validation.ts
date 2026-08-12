@@ -86,10 +86,10 @@ const containerRegistryPush: DeploymentRoleRequirement = {
   reason: "publish generated component images",
 };
 
-const azureAiDeveloper: DeploymentRoleRequirement = {
+const foundryUser: DeploymentRoleRequirement = {
   provider: "Microsoft.CognitiveServices",
-  role: "Azure AI Developer",
-  roleDefinitionId: "64702f94-c441-49e6-a78b-ef80e0188fee",
+  role: "Foundry User",
+  roleDefinitionId: "53ca6127-db72-4b80-b1b0-d745d6d5456d",
   reason: "deploy the hosted Foundry agent",
 };
 
@@ -129,7 +129,7 @@ export function planResourceValidation(
     roles.push(containerRegistryPush);
   }
   if (hasHostedAgent(requirements.resources, solution)) {
-    roles.push(azureAiDeveloper);
+    roles.push(foundryUser);
   }
 
   return {

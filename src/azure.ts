@@ -157,6 +157,7 @@ export interface AppServiceIngressOptions {
   resourceGroup: string;
   siteName: string;
   serviceTags: readonly string[];
+  defaultAction?: "Allow" | "Deny";
   ipAddresses?: readonly string[];
   ruleNamePrefix?: string;
   subscription?: string;
@@ -172,11 +173,56 @@ export interface AppServicePeerIngressOptions {
   priorityStart?: number;
 }
 
+export interface AppServiceReadyOptions {
+  resourceGroup: string;
+  siteName: string;
+  subscription: string;
+  attempts?: number;
+  delayMs?: number;
+}
+
 interface AppServiceAccessRestriction {
   action?: string;
   ipAddress?: string;
   priority?: number;
   tag?: string;
+}
+
+export async function waitForAppServiceReady(
+  deployment: Deployment,
+  options: AppServiceReadyOptions,
+): Promise<void> {
+  const instancesUri =
+    `https://management.azure.com/subscriptions/${encodeURIComponent(options.subscription)}` +
+    `/resourceGroups/${encodeURIComponent(options.resourceGroup)}` +
+    `/providers/Microsoft.Web/sites/${encodeURIComponent(options.siteName)}` +
+    "/instances?api-version=2024-11-01";
+  await retry(
+    async () => {
+      const state = (
+        await captureAzure(deployment, [
+          "rest",
+          "--method",
+          "get",
+          "--uri",
+          instancesUri,
+          "--query",
+          "value[0].properties.state",
+          "--output",
+          "tsv",
+        ])
+      ).trim();
+      if (state.toUpperCase() !== "READY") {
+        throw new Error(
+          `App Service '${options.siteName}' instance state is '${state || "Unavailable"}'.`,
+        );
+      }
+    },
+    {
+      attempts: options.attempts ?? 20,
+      delayMs: options.delayMs ?? 15_000,
+    },
+  );
 }
 
 export async function ensureAppServiceIngress(
@@ -290,6 +336,42 @@ export async function ensureAppServiceIngress(
     usedPriorities.add(priority);
     added.push(ipAddress);
     priority += 1;
+  }
+  if (options.defaultAction) {
+    const currentDefaultAction = (
+      await captureAzure(deployment, [
+        "webapp",
+        "config",
+        "access-restriction",
+        "show",
+        ...subscriptionArgs,
+        "--resource-group",
+        options.resourceGroup,
+        "--name",
+        options.siteName,
+        "--query",
+        "ipSecurityRestrictionsDefaultAction",
+        "--output",
+        "tsv",
+      ])
+    ).trim();
+    if (currentDefaultAction.toLowerCase() !== options.defaultAction.toLowerCase()) {
+      await runAzure(deployment, [
+        "webapp",
+        "config",
+        "access-restriction",
+        "set",
+        ...subscriptionArgs,
+        "--resource-group",
+        options.resourceGroup,
+        "--name",
+        options.siteName,
+        "--default-action",
+        options.defaultAction,
+        "--output",
+        "none",
+      ]);
+    }
   }
   return added;
 }

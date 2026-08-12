@@ -41,6 +41,9 @@ test("Contoso components provision their owned resources", async () => {
     backendLifecycle,
     frontendLifecycle,
     logicAppLifecycle,
+    identityBootstrap,
+    identityConfiguration,
+    identityLifecycle,
   ] = await Promise.all([
       readFile(
         resolve(contosoRoot, "components/shared/provisioning.ts"),
@@ -67,6 +70,15 @@ test("Contoso components provision their owned resources", async () => {
       readFile(resolve(contosoRoot, "components/backend/index.ts"), "utf8"),
       readFile(resolve(contosoRoot, "components/frontend/index.ts"), "utf8"),
       readFile(resolve(contosoRoot, "components/logic-app/index.ts"), "utf8"),
+      readFile(
+        resolve(contosoRoot, "components/shared/identity-bootstrap.ts"),
+        "utf8",
+      ),
+      readFile(
+        resolve(contosoRoot, "components/shared/identity-configuration.ts"),
+        "utf8",
+      ),
+      readFile(resolve(contosoRoot, "components/shared/identity.ts"), "utf8"),
     ]);
 
   assert.match(shared, /new Account\(/);
@@ -87,7 +99,7 @@ test("Contoso components provision their owned resources", async () => {
   for (const roleDefinitionId of [
     "5ae67dd6-50cb-40e7-96ff-dc2bfa4b606b",
     "8311e382-0749-4cb8-b61a-304f252e45ec",
-    "64702f94-c441-49e6-a78b-ef80e0188fee",
+    "53ca6127-db72-4b80-b1b0-d745d6d5456d",
   ]) {
     assert.match(sharedLifecycle, new RegExp(roleDefinitionId));
   }
@@ -119,11 +131,37 @@ test("Contoso components provision their owned resources", async () => {
   assert.match(backend, /new DatabaseAccount\(/);
   assert.match(backend, /new StorageAccount\(/);
   assert.match(backend, /allowSharedKeyAccess: false/);
+  assert.match(backend, /new SiteConfigAuthsettingsV2\(/);
+  assert.match(backend, /inputBackendComputeApplicationAppId/);
   assert.match(
     backend,
-    /serviceManagementReference: "c29c71f8-2db7-4d9e-bf8b-e6b0965ecde4"/,
+    /fn\.concat\("api:\/\/", backendComputeApplicationAppId\)/,
   );
-  assert.doesNotMatch(backend, /SERVICE_MANAGEMENT_REFERENCE/);
+  assert.doesNotMatch(backend, /Microsoft\.Graph|oauth2PermissionScopes/);
+  assert.doesNotMatch(backend, /defaultAuthorizationPolicy/);
+
+  assert.match(identityBootstrap, /new Stack\("main", \{ targetScope: "subscription" \}\)/);
+  assert.match(identityBootstrap, /Microsoft\.Graph\/applications/);
+  assert.match(identityBootstrap, /Microsoft\.Graph\/servicePrincipals/);
+  assert.match(identityBootstrap, /backendComputeApplicationAppId/);
+  assert.match(identityConfiguration, /ExistingPermissionScopes/);
+  assert.match(identityConfiguration, /ExistingApplicationRoles/);
+  assert.match(identityConfiguration, /oauth2PermissionScopes/);
+  assert.match(identityConfiguration, /value: "token"/);
+  assert.match(identityConfiguration, /preAuthorizedApplications/);
+  assert.match(identityConfiguration, /value: "access_as_application"/);
+  assert.match(identityConfiguration, /Microsoft\.Graph\/appRoleAssignedTo/);
+  assert.match(identityConfiguration, /backendIdentityPrincipalId/);
+  assert.match(identityConfiguration, /botIdentityPrincipalId/);
+  assert.match(
+    identityConfiguration,
+    /appId: "04b07795-8ddb-461a-bbee-02f9e1bf7b46"/,
+  );
+  assert.match(identityLifecycle, /ensureEntraApplications/);
+  assert.match(identityLifecycle, /configureEntraApplications/);
+  assert.match(identityLifecycle, /server application permissions/);
+  assert.match(identityLifecycle, /server application pre-authorization/);
+  assert.doesNotMatch(identityLifecycle, /graph\.microsoft\.com|\["rest"/);
   assert.match(
     backend,
     /\{ name: "AZURE_CLIENT_ID", value: backendComputeIdentity\.properties\.clientId as any \}/,
@@ -132,13 +170,23 @@ test("Contoso components provision their owned resources", async () => {
   assert.match(backend, /new Site\(/);
   assert.match(backend, /backendIdentityResourceId/);
   assert.doesNotMatch(backend, /new Bot\(|new Workflow\(/);
+  assert.doesNotMatch(backendLifecycle, /prepareAppServiceEntraApplication/);
+  assert.doesNotMatch(
+    backendLifecycle + frontendLifecycle + logicAppLifecycle,
+    /ensureAppService(?:Peer|ManagedIdentity)Authentication/,
+  );
+  assert.match(frontendLifecycle, /configureEntraApplications/);
 
   assert.match(frontend, /new Site\(/);
   assert.match(frontend, /new Bot\(/);
   assert.doesNotMatch(frontend, /ipSecurityRestrictions:/);
   assert.match(backendLifecycle, /ensureAppServiceIngress/);
+  assert.match(backendLifecycle, /waitForAppServiceReady/);
+  assert.match(backendLifecycle, /defaultAction: "Deny"/);
   assert.match(backendLifecycle, /serviceTags: \["LogicApps"\]/);
   assert.match(frontendLifecycle, /ensureAppServiceIngress/);
+  assert.match(frontendLifecycle, /waitForAppServiceReady/);
+  assert.match(frontendLifecycle, /defaultAction: "Deny"/);
   assert.match(
     frontendLifecycle,
     /serviceTags: \["LogicApps","AzureBotService"\]/,

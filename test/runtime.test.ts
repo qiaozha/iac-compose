@@ -11,6 +11,7 @@ import {
   ensureAppServicePeerIngress,
   ensureRoleAssignment,
   provisionTeamsApplication,
+  waitForAppServiceReady,
   type Command,
 } from "../src/index.js";
 
@@ -103,6 +104,38 @@ test("role assignments use the stable Foundry role definition ID", async () => {
   }
 });
 
+test("App Service readiness waits for a ready site instance", async () => {
+  const commands: Command[] = [];
+  const states = ["STARTING", "READY"];
+  class ReadyDeployment extends Deployment {
+    override async capture(command: Command): Promise<string> {
+      commands.push(command);
+      return `${states.shift() ?? "READY"}\n`;
+    }
+  }
+
+  await waitForAppServiceReady(new ReadyDeployment(), {
+    resourceGroup: "resources",
+    siteName: "backend",
+    subscription: "subscription",
+    attempts: 2,
+    delayMs: 0,
+  });
+
+  assert.equal(commands.length, 2);
+  assert.deepEqual(commands[0]?.args, [
+    "rest",
+    "--method",
+    "get",
+    "--uri",
+    "https://management.azure.com/subscriptions/subscription/resourceGroups/resources/providers/Microsoft.Web/sites/backend/instances?api-version=2024-11-01",
+    "--query",
+    "value[0].properties.state",
+    "--output",
+    "tsv",
+  ]);
+});
+
 test("App Service ingress preserves existing rules and adds only missing tags", async () => {
   const commands: Command[] = [];
   class IngressDeployment extends Deployment {
@@ -145,6 +178,42 @@ test("App Service ingress preserves existing rules and adds only missing tags", 
     "201",
     "--service-tag",
     "AppService",
+    "--output",
+    "none",
+  ]);
+});
+
+test("App Service ingress enforces the unmatched traffic action", async () => {
+  const commands: Command[] = [];
+  class DefaultActionDeployment extends Deployment {
+    override async capture(command: Command): Promise<string> {
+      commands.push(command);
+      return command.args?.includes("ipSecurityRestrictionsDefaultAction")
+        ? "Allow\n"
+        : "[]";
+    }
+
+    override async execute(command: Command): Promise<void> {
+      commands.push(command);
+    }
+  }
+
+  const added = await ensureAppServiceIngress(
+    new DefaultActionDeployment(),
+    {
+      resourceGroup: "resources",
+      siteName: "backend",
+      serviceTags: [],
+      defaultAction: "Deny",
+      subscription: "subscription",
+    },
+  );
+
+  assert.deepEqual(added, []);
+  assert.equal(commands.length, 3);
+  assert.deepEqual(commands[2]?.args?.slice(-4), [
+    "--default-action",
+    "Deny",
     "--output",
     "none",
   ]);
@@ -230,9 +299,14 @@ provision:
       assert.equal(command.cwd, source);
       assert.equal(await readFile(join(source, "teamsapp.yml"), "utf8"), sourceLifecycle);
       const environmentFile = join(source, "env", ".env.deploy-js-dev");
+      assert.match(
+        await readFile(environmentFile, "utf8"),
+        /TEAMS_APP_ID=existing-app-id/,
+      );
+      assert.equal(command.env?.TEAMS_APP_ID, "existing-app-id");
       await writeFile(
         environmentFile,
-        `${await readFile(environmentFile, "utf8")}TEAMS_APP_ID=test-app-id\n`,
+        `${await readFile(environmentFile, "utf8")}TEAMS_APP_ID=existing-app-id\n`,
       );
     }
   }
@@ -242,14 +316,15 @@ provision:
     {
       component: "frontend",
       componentDirectory: source,
+      existingAppId: "existing-app-id",
       manifestValues: { TEAMS_APP_NAME: "Test app" },
       outputNames: ["teamsAppId"],
     },
   );
 
   assert.deepEqual(outputs, {
-    TEAMS_APP_ID: "test-app-id",
-    teamsAppId: "test-app-id",
+    TEAMS_APP_ID: "existing-app-id",
+    teamsAppId: "existing-app-id",
   });
   assert.equal(
     await readFile(join(source, "teamsapp.yml"), "utf8"),

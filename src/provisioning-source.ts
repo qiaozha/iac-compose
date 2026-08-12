@@ -187,6 +187,512 @@ function createGraphResource(
 `;
 }
 
+export function renderEntraIdentityBootstrapSource(
+  options: ProvisioningSourceOptions,
+): string {
+  const plans = entraApplicationPlans(options);
+  if (plans.length === 0) return "";
+  const declarations = plans.map((plan) => `const ${plan.base}ApplicationUniqueName = stack.parameters.add(
+  ${JSON.stringify(`${plan.base}ApplicationUniqueName`)},
+  "string",
+);
+const ${plan.base}ApplicationAppId = bicepRef<string>(${JSON.stringify(`${plan.base}Application.appId`)});
+const ${plan.base}ApplicationObjectId = bicepRef<string>(${JSON.stringify(`${plan.base}Application.id`)});
+const ${plan.base}ServicePrincipalId = bicepRef<string>(${JSON.stringify(`${plan.base}ServicePrincipal.id`)});
+
+stack.outputs.add(${JSON.stringify(entraOutput(plan.resource.id, "APPLICATION_APP_ID"))}, "string", ${plan.base}ApplicationAppId);
+stack.outputs.add(${JSON.stringify(entraOutput(plan.resource.id, "APPLICATION_OBJECT_ID"))}, "string", ${plan.base}ApplicationObjectId);
+stack.outputs.add(${JSON.stringify(entraOutput(plan.resource.id, "SERVICE_PRINCIPAL_ID"))}, "string", ${plan.base}ServicePrincipalId);
+stack.outputs.add(${JSON.stringify(entraOutput(plan.resource.id, "APPLICATION_UNIQUE_NAME"))}, "string", ${plan.base}ApplicationUniqueName);`).join("\n\n");
+  const resources = plans.map((plan) => `  {
+    identifier: ${JSON.stringify(`${plan.base}Application`)},
+    type: "Microsoft.Graph/applications",
+    body: {
+      uniqueName: ${plan.base}ApplicationUniqueName,
+      displayName: ${JSON.stringify(plan.displayName)},
+      signInAudience: "AzureADMyOrg",
+      serviceManagementReference: ${JSON.stringify(options.serviceManagementReference)},
+    },
+  },
+  {
+    identifier: ${JSON.stringify(`${plan.base}ServicePrincipal`)},
+    type: "Microsoft.Graph/servicePrincipals",
+    body: { appId: ${plan.base}ApplicationAppId },
+  },`).join("\n");
+  const bindings = plans.map((plan) =>
+    `    ${plan.base}ApplicationUniqueName: fn.readEnvironmentVariable(${JSON.stringify(entraOutput(plan.resource.id, "APPLICATION_UNIQUE_NAME"))}),`
+  ).join("\n");
+  return `import {
+  bicepRef,
+  createBicepParameterFile,
+  renderBicepFile,
+} from "@azure/provisioning-bicep";
+import { fn, Stack } from "@azure/provisioning-core";
+
+import { renderGraphStack } from "./graph-provisioning.js";
+
+const stack = new Stack("main", { targetScope: "subscription" });
+${declarations}
+
+const rendered = renderGraphStack(stack, [
+${resources}
+]);
+const parameterFile = createBicepParameterFile("main.bicepparam", {
+  using: "./main.bicep",
+  parameters: {
+${bindings}
+  },
+});
+
+export const outputJson = rendered.outputJson;
+export const outputBicep = [
+  { ...rendered.main, path: "main.bicep" },
+  renderBicepFile(parameterFile),
+];
+`;
+}
+
+export function renderEntraIdentityConfigurationSource(
+  options: ProvisioningSourceOptions,
+): string {
+  const plans = entraApplicationPlans(options);
+  if (plans.length === 0) return "";
+  const declarations = plans.map((plan) => {
+    const principalDeclarations = plan.callerPrincipalOutputs.map((output) => {
+      const variable = `${plan.base}${pascalCase(output)}`;
+      return `const ${variable} = stack.parameters.add(${JSON.stringify(variable)}, "string", {
+  defaultValue: "",
+});`;
+    }).join("\n");
+    const clients = plan.authorizedClientApplicationIds.map((appId) => `    {
+      appId: ${JSON.stringify(appId)},
+      delegatedPermissionIds: [${plan.base}EffectiveDelegatedScopeId],
+    },`).join("\n");
+    return `const ${plan.base}ApplicationAppId = stack.parameters.add(${JSON.stringify(`${plan.base}ApplicationAppId`)}, "string");
+const ${plan.base}ApplicationUniqueName = stack.parameters.add(${JSON.stringify(`${plan.base}ApplicationUniqueName`)}, "string");
+const ${plan.base}PreAuthorizeClients = stack.parameters.add(${JSON.stringify(`${plan.base}PreAuthorizeClients`)}, "string", {
+  defaultValue: "false",
+});
+const ${plan.base}DelegatedScopeId = stack.parameters.add(${JSON.stringify(`${plan.base}DelegatedScopeId`)}, "string", {
+  defaultValue: "",
+});
+const ${plan.base}ApplicationRoleId = stack.parameters.add(${JSON.stringify(`${plan.base}ApplicationRoleId`)}, "string", {
+  defaultValue: "",
+});
+const ${plan.base}ExistingPermissionScopes = stack.parameters.add(${JSON.stringify(`${plan.base}ExistingPermissionScopes`)}, "array", {
+  defaultValue: [],
+});
+const ${plan.base}ExistingApplicationRoles = stack.parameters.add(${JSON.stringify(`${plan.base}ExistingApplicationRoles`)}, "array", {
+  defaultValue: [],
+});
+${principalDeclarations}
+const ${plan.base}Audience = fn.concat("api://", ${plan.base}ApplicationAppId);
+const ${plan.base}EffectiveDelegatedScopeId = fn.cond(
+  fn.not(fn.empty(${plan.base}DelegatedScopeId)),
+  ${plan.base}DelegatedScopeId,
+  fn.guid(${plan.base}ApplicationAppId, ${JSON.stringify(plan.delegatedPermissionScope)}),
+);
+const ${plan.base}EffectiveApplicationRoleId = fn.cond(
+  fn.not(fn.empty(${plan.base}ApplicationRoleId)),
+  ${plan.base}ApplicationRoleId,
+  fn.guid(${plan.base}ApplicationAppId, "access_as_application"),
+);
+const ${plan.base}PermissionScope = {
+  id: ${plan.base}EffectiveDelegatedScopeId,
+  value: ${JSON.stringify(plan.delegatedPermissionScope)},
+  type: "User",
+  isEnabled: true,
+  adminConsentDisplayName: ${JSON.stringify(`Access ${plan.displayName}`)},
+  adminConsentDescription: ${JSON.stringify(`Allow the application to access ${plan.displayName}.`)},
+  userConsentDisplayName: ${JSON.stringify(`Access ${plan.displayName}`)},
+  userConsentDescription: ${JSON.stringify(`Allow this application to access ${plan.displayName}.`)},
+};
+const ${plan.base}ApplicationRole = {
+  id: ${plan.base}EffectiveApplicationRoleId,
+  value: "access_as_application",
+  displayName: ${JSON.stringify(`Access ${plan.displayName} as an application`)},
+  description: ${JSON.stringify(`Allow a managed identity to access ${plan.displayName}.`)},
+  isEnabled: true,
+  allowedMemberTypes: ["Application"],
+};
+const ${plan.base}PreAuthorizedApplications = fn.cond<PreAuthorizedApplication[]>(
+  fn.eq(${plan.base}PreAuthorizeClients, "true"),
+  [
+${clients}
+  ],
+  [],
+);
+const ${plan.base}ApplicationObjectId = bicepRef<string>(${JSON.stringify(`${plan.base}Application.id`)});
+const ${plan.base}ServicePrincipalId = bicepRef<string>(${JSON.stringify(`${plan.base}ServicePrincipal.id`)});
+
+stack.outputs.add(${JSON.stringify(entraOutput(plan.resource.id, "APPLICATION_APP_ID"))}, "string", ${plan.base}ApplicationAppId);
+stack.outputs.add(${JSON.stringify(entraOutput(plan.resource.id, "APPLICATION_OBJECT_ID"))}, "string", ${plan.base}ApplicationObjectId);
+stack.outputs.add(${JSON.stringify(entraOutput(plan.resource.id, "SERVICE_PRINCIPAL_ID"))}, "string", ${plan.base}ServicePrincipalId);
+stack.outputs.add(${JSON.stringify(entraOutput(plan.resource.id, "APPLICATION_UNIQUE_NAME"))}, "string", ${plan.base}ApplicationUniqueName);
+stack.outputs.add(${JSON.stringify(entraOutput(plan.resource.id, "DELEGATED_SCOPE_ID"))}, "string", ${plan.base}EffectiveDelegatedScopeId);
+stack.outputs.add(${JSON.stringify(entraOutput(plan.resource.id, "APPLICATION_ROLE_ID"))}, "string", ${plan.base}EffectiveApplicationRoleId);`;
+  }).join("\n\n");
+  const resources = plans.map((plan) => {
+    const assignments = plan.callerPrincipalOutputs.map((output) => {
+      const variable = `${plan.base}${pascalCase(output)}`;
+      return `  {
+    identifier: ${JSON.stringify(`${plan.base}${pascalCase(output)}RoleAssignment`)},
+    type: "Microsoft.Graph/appRoleAssignedTo",
+    condition: fn.not(fn.empty(${variable})),
+    body: {
+      appRoleId: ${plan.base}EffectiveApplicationRoleId,
+      principalId: ${variable},
+      resourceId: ${plan.base}ServicePrincipalId,
+      resourceDisplayName: ${JSON.stringify(plan.displayName)},
+    },
+  },`;
+    }).join("\n");
+    return `  {
+    identifier: ${JSON.stringify(`${plan.base}Application`)},
+    type: "Microsoft.Graph/applications",
+    body: {
+      uniqueName: ${plan.base}ApplicationUniqueName,
+      displayName: ${JSON.stringify(plan.displayName)},
+      signInAudience: "AzureADMyOrg",
+      serviceManagementReference: ${JSON.stringify(options.serviceManagementReference)},
+      identifierUris: [${plan.base}Audience],
+      api: {
+        requestedAccessTokenVersion: 2,
+        oauth2PermissionScopes: fn.union(${plan.base}ExistingPermissionScopes, [
+          ${plan.base}PermissionScope,
+        ]),
+        preAuthorizedApplications: ${plan.base}PreAuthorizedApplications,
+      },
+      appRoles: fn.union(${plan.base}ExistingApplicationRoles, [
+        ${plan.base}ApplicationRole,
+      ]),
+    },
+  },
+  {
+    identifier: ${JSON.stringify(`${plan.base}ServicePrincipal`)},
+    type: "Microsoft.Graph/servicePrincipals",
+    body: {
+      appId: ${plan.base}ApplicationAppId,
+      dependsOn: [bicepRef(${JSON.stringify(`${plan.base}Application`)})],
+    },
+  },
+${assignments}`;
+  }).join("\n");
+  const bindings = plans.flatMap((plan) => [
+    `    ${plan.base}ApplicationAppId: fn.readEnvironmentVariable(${JSON.stringify(entraOutput(plan.resource.id, "APPLICATION_APP_ID"))}),`,
+    `    ${plan.base}ApplicationUniqueName: fn.readEnvironmentVariable(${JSON.stringify(entraOutput(plan.resource.id, "APPLICATION_UNIQUE_NAME"))}),`,
+    `    ${plan.base}PreAuthorizeClients: fn.readEnvironmentVariable(${JSON.stringify(entraOutput(plan.resource.id, "PREAUTHORIZE_CLIENTS"))}, "false"),`,
+    `    ${plan.base}DelegatedScopeId: fn.readEnvironmentVariable(${JSON.stringify(entraOutput(plan.resource.id, "DELEGATED_SCOPE_ID"))}, ""),`,
+    `    ${plan.base}ApplicationRoleId: fn.readEnvironmentVariable(${JSON.stringify(entraOutput(plan.resource.id, "APPLICATION_ROLE_ID"))}, ""),`,
+    `    ${plan.base}ExistingPermissionScopes: fn.json(fn.readEnvironmentVariable(${JSON.stringify(entraOutput(plan.resource.id, "EXISTING_PERMISSION_SCOPES"))}, "[]")),`,
+    `    ${plan.base}ExistingApplicationRoles: fn.json(fn.readEnvironmentVariable(${JSON.stringify(entraOutput(plan.resource.id, "EXISTING_APPLICATION_ROLES"))}, "[]")),`,
+    ...plan.callerPrincipalOutputs.map((output) =>
+      `    ${plan.base}${pascalCase(output)}: fn.readEnvironmentVariable(${JSON.stringify(output)}, ""),`
+    ),
+  ]).join("\n");
+  return `import {
+  bicepRef,
+  createBicepParameterFile,
+  renderBicepFile,
+} from "@azure/provisioning-bicep";
+import { fn, Stack, type ExpressionOrValue } from "@azure/provisioning-core";
+
+import { renderGraphStack } from "./graph-provisioning.js";
+
+interface PreAuthorizedApplication {
+  appId: ExpressionOrValue<string>;
+  delegatedPermissionIds: ExpressionOrValue<string>[];
+}
+
+const stack = new Stack("main", { targetScope: "subscription" });
+${declarations}
+
+const rendered = renderGraphStack(stack, [
+${resources}
+]);
+const parameterFile = createBicepParameterFile("main.bicepparam", {
+  using: "./main.bicep",
+  parameters: {
+${bindings}
+  },
+});
+
+export const outputJson = rendered.outputJson;
+export const outputBicep = [
+  { ...rendered.main, path: "main.bicep" },
+  renderBicepFile(parameterFile),
+];
+`;
+}
+
+export function renderEntraIdentityLifecycleSource(
+  options: ProvisioningSourceOptions,
+): string {
+  const plans = entraApplicationPlans(options);
+  if (plans.length === 0) return "";
+  const descriptors = plans.map((plan) => `  {
+    resourceId: ${JSON.stringify(plan.resource.id)},
+    displayName: ${JSON.stringify(plan.displayName)},
+    uniqueNamePrefix: ${JSON.stringify(plan.uniqueNamePrefix)},
+    delegatedPermissionScope: ${JSON.stringify(plan.delegatedPermissionScope)},
+    applicationAppIdOutput: ${JSON.stringify(entraOutput(plan.resource.id, "APPLICATION_APP_ID"))},
+    applicationObjectIdOutput: ${JSON.stringify(entraOutput(plan.resource.id, "APPLICATION_OBJECT_ID"))},
+    servicePrincipalIdOutput: ${JSON.stringify(entraOutput(plan.resource.id, "SERVICE_PRINCIPAL_ID"))},
+    applicationUniqueNameOutput: ${JSON.stringify(entraOutput(plan.resource.id, "APPLICATION_UNIQUE_NAME"))},
+    delegatedScopeIdOutput: ${JSON.stringify(entraOutput(plan.resource.id, "DELEGATED_SCOPE_ID"))},
+    applicationRoleIdOutput: ${JSON.stringify(entraOutput(plan.resource.id, "APPLICATION_ROLE_ID"))},
+    preAuthorizeClientsOutput: ${JSON.stringify(entraOutput(plan.resource.id, "PREAUTHORIZE_CLIENTS"))},
+    existingPermissionScopesOutput: ${JSON.stringify(entraOutput(plan.resource.id, "EXISTING_PERMISSION_SCOPES"))},
+    existingApplicationRolesOutput: ${JSON.stringify(entraOutput(plan.resource.id, "EXISTING_APPLICATION_ROLES"))},
+    callerPrincipalOutputs: ${JSON.stringify(plan.callerPrincipalOutputs)},
+  },`).join("\n");
+  return `import {
+  captureAzureJson,
+  runAzure,
+  type Deployment,
+} from "imperative-deploy";
+import { persistEnvironment, requiredEnv } from "../../runtime/environment.js";
+import {
+  generatedIdentityProject,
+  identityBootstrapEntrypoint,
+  identityConfigurationEntrypoint,
+} from "../../runtime/paths.js";
+
+interface ApplicationSummary {
+  appId: string;
+  uniqueName?: string;
+}
+
+interface ApplicationDefinition extends ApplicationSummary {
+  appRoles?: ApplicationRole[];
+  api?: { oauth2PermissionScopes?: PermissionScope[] };
+}
+
+interface PermissionScope {
+  adminConsentDescription?: string;
+  adminConsentDisplayName?: string;
+  id: string;
+  isEnabled?: boolean;
+  type?: string;
+  userConsentDescription?: string;
+  userConsentDisplayName?: string;
+  value?: string;
+}
+
+interface ApplicationRole {
+  allowedMemberTypes?: string[];
+  description?: string;
+  displayName?: string;
+  id: string;
+  isEnabled?: boolean;
+  value?: string;
+}
+
+const identityDeploymentName = ${JSON.stringify(`${options.requirements.solution.name}-identity`)};
+const applicationPlans = [
+${descriptors}
+] as const;
+
+export async function ensureEntraApplications(
+  deployment: Deployment,
+): Promise<void> {
+  const suffix = deployment.dryRun
+    ? process.env.DEPLOY_RESOURCE_SUFFIX?.trim() || "dryrun"
+    : requiredEnv("DEPLOY_RESOURCE_SUFFIX");
+  const environmentValues: Record<string, string> = {};
+  for (const plan of applicationPlans) {
+    const desiredUniqueName = plan.uniqueNamePrefix + suffix;
+    environmentValues[plan.applicationUniqueNameOutput] = deployment.dryRun
+      ? desiredUniqueName
+      : await resolveApplicationUniqueName(
+          deployment,
+          plan.applicationAppIdOutput,
+          plan.displayName,
+          desiredUniqueName,
+        );
+  }
+  const outputs = await deployment.provision("server application registration", {
+    entrypoint: identityBootstrapEntrypoint,
+    outputDirectory: generatedIdentityProject,
+    deploymentName: identityDeploymentName,
+    scope: "subscription",
+    subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
+    location: requiredEnv("AZURE_LOCATION"),
+    environmentValues,
+  });
+  if (deployment.dryRun) {
+    const dryRunOutputs: Record<string, string> = {};
+    for (const plan of applicationPlans) {
+      Object.assign(dryRunOutputs, {
+        [plan.applicationAppIdOutput]:
+          process.env[plan.applicationAppIdOutput] ??
+          "00000000-0000-4000-8000-000000000010",
+        [plan.applicationObjectIdOutput]:
+          process.env[plan.applicationObjectIdOutput] ??
+          "00000000-0000-4000-9000-000000000010",
+        [plan.servicePrincipalIdOutput]:
+          process.env[plan.servicePrincipalIdOutput] ??
+          "00000000-0000-4000-a000-000000000010",
+        [plan.applicationUniqueNameOutput]:
+          environmentValues[plan.applicationUniqueNameOutput]!,
+      });
+    }
+    Object.assign(process.env, dryRunOutputs);
+    return;
+  }
+  await persistEnvironment(requiredEnv("AZURE_ENV_NAME"), outputs);
+}
+
+export async function configureEntraApplications(
+  deployment: Deployment,
+): Promise<void> {
+  const environmentValues: Record<string, string> = {};
+  for (const plan of applicationPlans) {
+    const appId = requiredEnv(plan.applicationAppIdOutput);
+    const application = deployment.dryRun
+      ? undefined
+      : await captureAzureJson<ApplicationDefinition>(deployment, [
+          "ad",
+          "app",
+          "show",
+          "--id",
+          appId,
+        ]);
+    const delegatedScope = application?.api?.oauth2PermissionScopes?.find(
+      (scope) => scope.value === plan.delegatedPermissionScope,
+    );
+    const applicationRole = application?.appRoles?.find(
+      (role) => role.value === "access_as_application",
+    );
+    Object.assign(environmentValues, {
+      [plan.delegatedScopeIdOutput]: delegatedScope?.id ?? "",
+      [plan.applicationRoleIdOutput]: applicationRole?.id ?? "",
+      [plan.existingPermissionScopesOutput]: JSON.stringify(
+        (application?.api?.oauth2PermissionScopes ?? [])
+          .filter((scope) => scope.value !== plan.delegatedPermissionScope)
+          .map(normalizePermissionScope),
+      ),
+      [plan.existingApplicationRolesOutput]: JSON.stringify(
+        (application?.appRoles ?? [])
+          .filter((role) => role.value !== "access_as_application")
+          .map(normalizeApplicationRole),
+      ),
+    });
+    for (const output of plan.callerPrincipalOutputs) {
+      environmentValues[output] = process.env[output]?.trim() ?? "";
+    }
+  }
+  const provisionPermissions = (
+    name: string,
+    preAuthorizeClients: boolean,
+  ) => deployment.provision(name, {
+    entrypoint: identityConfigurationEntrypoint,
+    outputDirectory: generatedIdentityProject,
+    deploymentName: identityDeploymentName,
+    scope: "subscription",
+    subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
+    location: requiredEnv("AZURE_LOCATION"),
+    environmentValues: {
+      ...environmentValues,
+      ...Object.fromEntries(
+        applicationPlans.map((plan) => [
+          plan.preAuthorizeClientsOutput,
+          preAuthorizeClients ? "true" : "false",
+        ]),
+      ),
+    },
+  });
+  await provisionPermissions("server application permissions", false);
+  const outputs = await provisionPermissions(
+    "server application pre-authorization",
+    true,
+  );
+  if (!deployment.dryRun) {
+    await persistEnvironment(requiredEnv("AZURE_ENV_NAME"), outputs);
+  }
+}
+
+async function resolveApplicationUniqueName(
+  deployment: Deployment,
+  appIdOutput: string,
+  displayName: string,
+  desiredUniqueName: string,
+): Promise<string> {
+  const persistedAppId = process.env[appIdOutput]?.trim();
+  let application = persistedAppId
+    ? await captureAzureJson<ApplicationSummary>(deployment, [
+        "ad",
+        "app",
+        "show",
+        "--id",
+        persistedAppId,
+      ]).catch(() => undefined)
+    : undefined;
+  if (!application) {
+    const escaped = desiredUniqueName.replaceAll("'", "''");
+    application = (
+      await captureAzureJson<ApplicationSummary[]>(deployment, [
+        "ad",
+        "app",
+        "list",
+        "--filter",
+        \`uniqueName eq '\${escaped}'\`,
+      ])
+    )[0];
+  }
+  if (!application) {
+    application = (
+      await captureAzureJson<ApplicationSummary[]>(deployment, [
+        "ad",
+        "app",
+        "list",
+        "--display-name",
+        displayName,
+      ])
+    )[0];
+  }
+  if (!application) return desiredUniqueName;
+  if (application.uniqueName?.trim()) return application.uniqueName.trim();
+  await runAzure(deployment, [
+    "ad",
+    "app",
+    "update",
+    "--id",
+    application.appId,
+    "--set",
+    \`uniqueName=\${desiredUniqueName}\`,
+    "--output",
+    "none",
+  ]);
+  return desiredUniqueName;
+}
+
+function normalizePermissionScope(scope: PermissionScope): Record<string, unknown> {
+  return {
+    id: scope.id,
+    value: scope.value ?? "",
+    type: scope.type ?? "User",
+    isEnabled: scope.isEnabled ?? true,
+    adminConsentDisplayName: scope.adminConsentDisplayName ?? "",
+    adminConsentDescription: scope.adminConsentDescription ?? "",
+    userConsentDisplayName: scope.userConsentDisplayName ?? "",
+    userConsentDescription: scope.userConsentDescription ?? "",
+  };
+}
+
+function normalizeApplicationRole(role: ApplicationRole): Record<string, unknown> {
+  return {
+    id: role.id,
+    value: role.value ?? "",
+    displayName: role.displayName ?? "",
+    description: role.description ?? "",
+    isEnabled: role.isEnabled ?? true,
+    allowedMemberTypes: role.allowedMemberTypes ?? [],
+  };
+}
+`;
+}
+
 export function provisioningDependencies(
   outputDirectory: string,
   repositoryRoot: string,
@@ -244,6 +750,9 @@ class ProvisioningSourceRenderer {
       options.solution.components.map((component) => [component.id, component.kind]),
     );
     this.#registerOutputs();
+    if (owner === undefined || owner === "shared") {
+      this.#outputs.set("DEPLOY_RESOURCE_SUFFIX", "suffix");
+    }
     this.#prepareWorkflowPlans();
   }
 
@@ -669,42 +1178,27 @@ const ${base}Insights = new ApplicationInsightsComponent(stack, {
       if (this.#isHosted(resource)) continue;
       const base = identifier(resource.id);
       const runtimeSettings = asObject(asObject(resource.configuration).runtimeSettings);
+      const entraAuthentication = microsoftEntraAuthentication(resource);
       const botIdentity = this.#ofKind("bot-identity")[0];
       const attachedIdentity =
         resource.authentication === "bot-framework" && botIdentity
           ? `fn.union(\n      fn.json(fn.concat('{"', ${base}Identity.id, '":{}}')),\n      fn.json(fn.concat('{"', ${identifier(botIdentity.id)}Identity.id, '":{}}')),\n    ) as any`
           : `fn.json(fn.concat('{"', ${base}Identity.id, '":{}}')) as any`;
-      if (resource.authentication === "managed-identity") {
+      if (entraAuthentication) {
         const audienceName = `${base}Audience`;
         const appIdName = `${base}ApplicationAppId`;
-        this.#sections.push(`const ${audienceName} = fn.concat(
-  ${JSON.stringify(`api://${normalizedName(this.#solutionName(), resource.id)}-`)},
-  suffix,
-);
-const ${appIdName} = bicepRef<string>(${JSON.stringify(`${base}Application.appId`)});
+        const applicationAppId = this.#input(
+          entraOutput(resource.id, "APPLICATION_APP_ID"),
+          appIdName,
+        );
+        this.#sections.push(`const ${appIdName} = ${applicationAppId};
+const ${audienceName} = fn.concat("api://", ${appIdName});
 `);
-        this.#graphResources.push(`  {
-    identifier: ${JSON.stringify(`${base}Application`)},
-    type: "Microsoft.Graph/applications",
-    body: {
-      uniqueName: fn.concat(${JSON.stringify(hyphenatedPrefix(this.#solutionName(), `${resource.id}-api`, 82))}, suffix),
-      displayName: ${JSON.stringify(`${this.#solutionName()} ${resource.id} API`)},
-      signInAudience: "AzureADMyOrg",
-      serviceManagementReference: ${JSON.stringify(this.#options.serviceManagementReference)},
-      identifierUris: [${audienceName}],
-      api: { requestedAccessTokenVersion: 2 },
-    },
-  },
-  {
-    identifier: ${JSON.stringify(`${base}ServicePrincipal`)},
-    type: "Microsoft.Graph/servicePrincipals",
-    body: { appId: ${appIdName} },
-  },`);
       }
       const appSettings = [
         `{ name: "WEBSITES_ENABLE_APP_SERVICE_STORAGE", value: "false" }`,
         `{ name: "WEBSITES_PORT", value: ${JSON.stringify(String(numberValue(resource.containerPort, 8080)))} }`,
-        ...(resource.authentication === "managed-identity"
+        ...(entraAuthentication
           ? [`{ name: "AZURE_CLIENT_ID", value: ${base}Identity.properties.clientId as any }`]
           : []),
         ...Object.entries(runtimeSettings).map(
@@ -749,7 +1243,7 @@ const ${base}Site = new Site(stack, {
   } as any,
 });
 `);
-      if (resource.authentication === "managed-identity") {
+      if (entraAuthentication) {
         this.#sections.push(`new SiteConfigAuthsettingsV2(${base}Site, {
   properties: {
     platform: { enabled: true, runtimeVersion: "~1" },
@@ -1163,7 +1657,7 @@ export const outputBicep = [
       agentIdentityResourceId: `${base}Identity.id`,
       backendBaseUrl: `fn.concat("https://", ${base}Site.properties.defaultHostName as any)`,
       backendAudience:
-        resource.authentication === "managed-identity"
+        microsoftEntraAuthentication(resource)
           ? `${base}Audience`
           : `${base}Identity.properties.clientId as any`,
       backendIdentityClientId: `${base}Identity.properties.clientId as any`,
@@ -1716,6 +2210,13 @@ function normalizedName(solution: string, resource: string): string {
     .slice(0, 90);
 }
 
+export function entraApplicationUniqueNamePrefix(
+  solution: string,
+  resource: string,
+): string {
+  return hyphenatedPrefix(solution, `${resource}-api`, 82);
+}
+
 function hyphenatedPrefix(
   solution: string,
   resource: string,
@@ -1760,6 +2261,180 @@ function asObject(value: unknown): Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Readonly<Record<string, unknown>>)
     : {};
+}
+
+interface EntraApplicationPlan {
+  resource: ResourceRequirement;
+  base: string;
+  uniqueNamePrefix: string;
+  displayName: string;
+  delegatedPermissionScope: string;
+  authorizedClientApplicationIds: readonly string[];
+  callerPrincipalOutputs: readonly string[];
+}
+
+export function hasEntraApplications(
+  options: ProvisioningSourceOptions,
+): boolean {
+  return entraApplicationPlans(options).length > 0;
+}
+
+export function entraConfigurationOwner(
+  options: ProvisioningSourceOptions,
+): string | undefined {
+  const plans = entraApplicationPlans(options);
+  if (plans.length === 0) return undefined;
+  const outputProducers = new Map<string, ResourceRequirement>();
+  for (const resource of options.requirements.resources) {
+    for (const output of resource.produces ?? []) {
+      outputProducers.set(output, resource);
+    }
+  }
+  const owners = new Set<string>();
+  for (const plan of plans) {
+    owners.add(resourceOwner(plan.resource));
+    for (const output of plan.callerPrincipalOutputs) {
+      const producer = outputProducers.get(output);
+      for (const owner of producer?.requiredBy ?? []) owners.add(owner);
+    }
+  }
+  const order = ["shared", ...options.orderedComponents];
+  return [...owners].reduce((latest, owner) =>
+    order.indexOf(owner) > order.indexOf(latest) ? owner : latest
+  , "shared");
+}
+
+function entraApplicationPlans(
+  options: ProvisioningSourceOptions,
+): EntraApplicationPlan[] {
+  return options.requirements.resources.flatMap((resource) => {
+    const authentication = microsoftEntraAuthentication(resource);
+    if (!authentication) return [];
+    return [{
+      resource,
+      base: identifier(resource.id),
+      uniqueNamePrefix: entraApplicationUniqueNamePrefix(
+        options.requirements.solution.name,
+        resource.id,
+      ),
+      displayName: `${options.requirements.solution.name} ${resource.id} API`,
+      delegatedPermissionScope:
+        authentication.delegatedPermissionScope ?? "access_as_user",
+      authorizedClientApplicationIds:
+        authentication.authorizedClientApplicationIds,
+      callerPrincipalOutputs: entraCallerPrincipalOutputs(options, resource),
+    }];
+  });
+}
+
+function entraCallerPrincipalOutputs(
+  options: ProvisioningSourceOptions,
+  target: ResourceRequirement,
+): string[] {
+  const resources = options.requirements.resources;
+  const principals = new Set<string>();
+  const targetOutputs = new Set(target.produces ?? []);
+  const ingress = asObject(asObject(target.configuration).ingress);
+  const allowedSources = arrayValue(ingress.allowedSourceResources)
+    .filter((value): value is string => typeof value === "string");
+  for (const sourceId of allowedSources) {
+    const source = resources.find((resource) => resource.id === sourceId);
+    if (!source) continue;
+    const configuredIdentity = exactOutputBinding(
+      asObject(source.configuration).identityResourceId,
+    );
+    const identityOutput = configuredIdentity ??
+      source.produces?.find((output) => /IdentityResourceId$/.test(output));
+    const principal = identityOutput
+      ? principalOutputForIdentity(resources, identityOutput)
+      : source.produces?.find((output) => /IdentityPrincipalId$/.test(output));
+    if (principal) principals.add(principal);
+  }
+  for (const workflow of resources.filter(
+    (resource) => resource.kind === "workflow-host",
+  )) {
+    const bindings = outputBindings(workflow.parameters);
+    if (!bindings.some((binding) => targetOutputs.has(binding))) continue;
+    for (const identityOutput of bindings.filter((binding) =>
+      /IdentityResourceId$/.test(binding)
+    )) {
+      const principal = principalOutputForIdentity(resources, identityOutput);
+      if (principal) principals.add(principal);
+    }
+  }
+  return [...principals];
+}
+
+function principalOutputForIdentity(
+  resources: readonly ResourceRequirement[],
+  identityOutput: string,
+): string | undefined {
+  const producer = resources.find((resource) =>
+    resource.produces?.includes(identityOutput)
+  );
+  if (!producer) return undefined;
+  const expected = identityOutput.replace(/ResourceId$/, "PrincipalId");
+  return producer.produces?.includes(expected)
+    ? expected
+    : producer.produces?.find((output) => /IdentityPrincipalId$/.test(output));
+}
+
+function exactOutputBinding(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return /^\$\{output\.([A-Za-z][A-Za-z0-9_]*)\}$/.exec(value)?.[1];
+}
+
+function entraOutput(resourceId: string, suffix: string): string {
+  return `DEPLOY_ENTRA_${resourceId.replace(/[^A-Za-z0-9]+/g, "_").toUpperCase()}_${suffix}`;
+}
+
+function microsoftEntraAuthentication(
+  resource: ResourceRequirement,
+):
+  | {
+      delegatedPermissionScope?: string;
+      authorizedClientApplicationIds: readonly string[];
+    }
+  | undefined {
+  if (
+    resource.authentication !== "managed-identity" &&
+    resource.authentication !== "microsoft-entra"
+  ) {
+    return undefined;
+  }
+  const authentication = asObject(
+    asObject(resource.configuration).authentication,
+  );
+  if (
+    resource.authentication === "managed-identity" &&
+    Object.keys(authentication).length === 0
+  ) {
+    return { authorizedClientApplicationIds: [] };
+  }
+  const provider = requiredString(
+    authentication.provider,
+    `${resource.id}.configuration.authentication.provider`,
+  );
+  if (provider !== "microsoft-entra") {
+    throw new Error(
+      `${resource.id}.configuration.authentication.provider must be 'microsoft-entra'.`,
+    );
+  }
+  return {
+    delegatedPermissionScope: requiredString(
+      authentication.delegatedPermissionScope,
+      `${resource.id}.configuration.authentication.delegatedPermissionScope`,
+    ),
+    authorizedClientApplicationIds: requiredArray(
+      authentication.authorizedClientApplicationIds,
+      `${resource.id}.configuration.authentication.authorizedClientApplicationIds`,
+    ).map((applicationId, index) =>
+      requiredString(
+        applicationId,
+        `${resource.id}.configuration.authentication.authorizedClientApplicationIds[${index}]`,
+      )
+    ),
+  };
 }
 
 function requiredObject(value: unknown, name: string): Readonly<Record<string, unknown>> {

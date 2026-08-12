@@ -7,11 +7,13 @@ import {
   prepareAppServiceContainer,
   provisionTeamsApplication,
   type Deployment,
+  waitForAppServiceReady,
 } from "imperative-deploy";
 import {
   persistEnvironment,
   requiredEnv,
 } from "../../runtime/environment.js";
+import { configureEntraApplications } from "../shared/identity.js";
 import {
   generatedFrontendProject,
   frontendProvisioningEntrypoint,
@@ -39,11 +41,13 @@ export async function frontend(deployment: Deployment): Promise<void> {
     );
   });
 
+  await configureEntraApplications(deployment);
   await deployment.deploy("configure frontend ingress", async () => {
     await ensureAppServiceIngress(deployment, {
       resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
       siteName: requiredEnv("DEPLOY_RESOURCE_FRONTENDCOMPUTE_NAME"),
       serviceTags: ["LogicApps","AzureBotService"],
+      defaultAction: "Deny",
       subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
     });
   });
@@ -80,12 +84,18 @@ export async function frontend(deployment: Deployment): Promise<void> {
   if (deployment.dryRun) await prepareAppServiceContainer(deployment, service);
   await deployment.deploy("frontend container 'frontendCompute'", async () => {
     Object.assign(outputs, await deployAppServiceContainer(deployment, service));
+    await waitForAppServiceReady(deployment, {
+      resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
+      siteName: requiredEnv("DEPLOY_RESOURCE_FRONTENDCOMPUTE_NAME"),
+      subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
+    });
   });
   Object.assign(
     outputs,
     await provisionTeamsApplication(deployment, {
       component: "frontend",
       componentDirectory: resolve(packageRoot, "components/frontend"),
+      existingAppId: "9668bcb5-a50b-4e39-a136-b3301305de66",
       manifestValues: {
         "BOT_ID": deploymentValue(deployment, "botClientId"),
         "DEVELOPER_NAME": "Contoso",
