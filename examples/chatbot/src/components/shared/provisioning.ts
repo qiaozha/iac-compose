@@ -1,6 +1,6 @@
 import {
   createBicepParameterFile,
-  renderBicepFile,
+  renderBicepParameterFile,
   renderBicepFiles,
 } from "@azure/provisioning-bicep";
 import {
@@ -620,5 +620,5 @@ if (renderedStack === undefined) {
 }
 export const outputBicep = [
   { ...renderedStack, path: "main.bicep" },
-  renderBicepFile(parameterFile),
+  renderBicepParameterFile(parameterFile),
 ];

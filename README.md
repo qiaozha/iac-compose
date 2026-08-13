@@ -178,8 +178,8 @@ tree: `deploy-js run` resolves its `imperative-deploy` imports to the running
 CLI package. Directly importing or compiling generated source still requires an
 `imperative-deploy` dependency in the customer package.
 
-Install the generated package's local provisioning SDK dependencies before
-typechecking it directly:
+Install the generated package's provisioning SDK dependencies before typechecking
+it directly:
 
 ```bash
 npm install --prefix ./package/deployment
@@ -230,14 +230,13 @@ environment outputs as strings.
 
 ## Chatbot integration
 
-The chatbot is its own npm package. Its provisioning dependencies are packed
-tarballs owned by this tool under `vendor/` and installed through
-`examples/chatbot/package.json`; chatbot source never imports the neighboring
-provisioning workspace or its `dist` directories. Refresh the tarballs from any
-local provisioning workspace with:
+The chatbot is its own npm package. Its provisioning dependencies are pinned to
+package-specific GitHub release assets from
+`Azure/js-provisioning-lib` in `examples/chatbot/package.json`; chatbot source
+never imports a neighboring provisioning workspace or its `dist` directories.
+Install them with:
 
 ```bash
-npm --prefix examples/chatbot run install:local-provisioning -- /path/to/provisioning-workspace
 npm ci --prefix examples/chatbot
 ```
 

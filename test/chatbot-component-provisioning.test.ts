@@ -238,19 +238,29 @@ test("runtime configuration does not seed Cognitive Services account keys", asyn
   assert.doesNotMatch(source, /"cognitiveservices"/);
 });
 
-test("chatbot installs provisioning libraries from local package tarballs", async () => {
+test("chatbot installs provisioning libraries from GitHub release assets", async () => {
   const packageJson = JSON.parse(
     await readFile(resolve("examples/chatbot/package.json"), "utf8"),
   ) as { dependencies?: Record<string, string> };
+  const packageLock = JSON.parse(
+    await readFile(resolve("examples/chatbot/package-lock.json"), "utf8"),
+  ) as {
+    packages?: Record<string, { resolved?: string; integrity?: string }>;
+  };
   const provisioningDependencies = Object.entries(
     packageJson.dependencies ?? {},
   ).filter(([name]) => name.startsWith("@azure/provisioning-"));
   assert.ok(provisioningDependencies.length > 0);
   for (const [name, value] of provisioningDependencies) {
-    assert.match(value, /^file:\.\.\/\.\.\/vendor\/azure-provisioning-.+\.tgz$/, name);
-    await access(resolve("examples/chatbot", value.slice("file:".length)));
+    const packageName = name.slice("@azure/".length);
+    const releaseUrl =
+      `https://github.com/Azure/js-provisioning-lib/releases/download/` +
+      `%40azure/${packageName}%400.1.0/azure-${packageName}-0.1.0.tgz`;
+    assert.equal(value, releaseUrl, name);
+    const lockedPackage = packageLock.packages?.[`node_modules/${name}`];
+    assert.equal(lockedPackage?.resolved, releaseUrl, name);
+    assert.match(lockedPackage?.integrity ?? "", /^sha512-/, name);
   }
-  await access(resolve("examples/chatbot/package-lock.json"));
 });
 
 test("chatbot imports imperative-deploy directly through its local package", async () => {
