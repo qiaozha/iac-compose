@@ -1,3 +1,5 @@
+import { relative as pathRelative } from "node:path";
+
 import type {
   DeploymentSolution,
   ResourceRequirement,
@@ -691,10 +693,18 @@ function normalizeApplicationRole(role: ApplicationRole): Record<string, unknown
 `;
 }
 
-export function provisioningDependencies(): Readonly<Record<string, string>> {
+export function provisioningDependencies(
+  outputDirectory: string,
+  repositoryRoot: string,
+): Readonly<Record<string, string>> {
   const version = "0.1.0";
-  const releaseRoot =
-    "https://github.com/Azure/js-provisioning-lib/releases/download";
+  const vendorPath = pathRelative(
+    outputDirectory,
+    `${repositoryRoot}/vendor`,
+  ).replaceAll("\\", "/");
+  const vendorRoot = vendorPath.startsWith(".")
+    ? vendorPath
+    : `./${vendorPath}`;
   const packages = [
     "appconfiguration",
     "applicationinsights",
@@ -716,7 +726,7 @@ export function provisioningDependencies(): Readonly<Record<string, string>> {
   return Object.fromEntries(
     packages.map((name) => [
       `@azure/provisioning-${name}`,
-      `${releaseRoot}/%40azure/provisioning-${name}%40${version}/azure-provisioning-${name}-${version}.tgz`,
+      `file:${vendorRoot}/azure-provisioning-${name}-${version}.tgz`,
     ]),
   );
 }
@@ -2324,7 +2334,10 @@ function entraCallerPrincipalOutputs(
   const principals = new Set<string>();
   const targetOutputs = new Set(target.produces ?? []);
   const ingress = asObject(asObject(target.configuration).ingress);
-  const allowedSources = arrayValue(ingress.allowedSourceResources)
+  const privateEndpoint = asObject(ingress.privateEndpoint);
+  const allowedSources = arrayValue(
+    privateEndpoint.sourceResources ?? ingress.allowedSourceResources,
+  )
     .filter((value): value is string => typeof value === "string");
   for (const sourceId of allowedSources) {
     const source = resources.find((resource) => resource.id === sourceId);

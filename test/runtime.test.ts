@@ -8,6 +8,7 @@ import {
   createDeployment,
   Deployment,
   ensureAppServiceIngress,
+  ensureAppServicePrivateEndpoint,
   ensureAppServicePeerIngress,
   ensureRoleAssignment,
   provisionTeamsApplication,
@@ -283,6 +284,149 @@ test("App Service peer ingress allows only missing possible outbound IPs", async
   ]);
 });
 
+test("App Service private networking integrates the source with a target private endpoint", async () => {
+  const captured: Command[] = [];
+  const executed: Command[] = [];
+  class PrivateEndpointDeployment extends Deployment {
+    override async capture(command: Command): Promise<string> {
+      captured.push(command);
+      if (command.args?.includes("vnet-integration")) return "[]";
+      if (command.args?.includes("publicNetworkAccess")) return "Enabled\n";
+      if (command.args?.includes("access-restriction")) {
+        return JSON.stringify([
+          { action: "Allow", name: "Allow frontendCompute 1" },
+          { action: "Allow", name: "Allow anotherFrontend 1" },
+          { action: "Deny", name: "Deny all" },
+        ]);
+      }
+      return "";
+    }
+
+    override async execute(command: Command): Promise<void> {
+      executed.push(command);
+    }
+  }
+
+  await ensureAppServicePrivateEndpoint(new PrivateEndpointDeployment(), {
+    resourceGroup: "resources",
+    location: "westus2",
+    sourceSiteName: "frontend",
+    targetSiteName: "backend",
+    sourceResourceName: "frontendCompute",
+    targetResourceName: "backendCompute",
+    subscription: "subscription",
+    publicNetworkAccess: "Disabled",
+  });
+
+  assert.equal(
+    [...captured, ...executed].some((command) =>
+      command.args?.includes("possibleOutboundIpAddresses"),
+    ),
+    false,
+  );
+  assert.equal(
+    executed.filter((command) => command.args?.includes("access-restriction"))
+      .length,
+    1,
+  );
+  const legacyRuleCleanup = executed.find((command) =>
+    command.args?.includes("access-restriction"),
+  );
+  assert.ok(legacyRuleCleanup);
+  assert.equal(
+    legacyRuleCleanup.args?.[
+      legacyRuleCleanup.args.indexOf("--rule-name") + 1
+    ],
+    "Allow frontendCompute 1",
+  );
+  const integration = executed.find(
+    (command) =>
+      command.args?.[0] === "webapp" &&
+      command.args?.[1] === "vnet-integration" &&
+      command.args?.[2] === "add",
+  );
+  assert.ok(integration);
+  assert.equal(
+    integration.args?.[integration.args.indexOf("--name") + 1],
+    "frontend",
+  );
+  assert.equal(
+    integration.args?.[integration.args.indexOf("--subnet") + 1],
+    "integration-frontendcompute",
+  );
+  const privateEndpoint = executed.find(
+    (command) =>
+      command.args?.[0] === "network" &&
+      command.args?.[1] === "private-endpoint" &&
+      command.args?.[2] === "create",
+  );
+  assert.ok(privateEndpoint);
+  assert.equal(
+    privateEndpoint.args?.[
+      privateEndpoint.args.indexOf("--private-connection-resource-id") + 1
+    ],
+    "/subscriptions/subscription/resourceGroups/resources/providers/Microsoft.Web/sites/backend",
+  );
+  assert.equal(
+    privateEndpoint.args?.[privateEndpoint.args.indexOf("--group-id") + 1],
+    "sites",
+  );
+  assert.ok(
+    executed.some(
+      (command) =>
+        command.args?.[0] === "network" &&
+        command.args?.[1] === "private-endpoint" &&
+        command.args?.[2] === "dns-zone-group" &&
+        command.args?.[3] === "create",
+    ),
+  );
+  const publicAccess = executed.find(
+    (command) =>
+      command.args?.[0] === "webapp" && command.args?.[1] === "update",
+  );
+  assert.ok(publicAccess);
+  assert.ok(publicAccess.args?.includes("publicNetworkAccess=Disabled"));
+});
+
+test("App Service private networking preserves an existing configuration", async () => {
+  const executed: Command[] = [];
+  class ExistingPrivateEndpointDeployment extends Deployment {
+    override async capture(command: Command): Promise<string> {
+      if (command.args?.includes("vnet-integration")) {
+        return JSON.stringify([
+          {
+            vnetResourceId:
+              "/subscriptions/subscription/resourceGroups/resources/providers/Microsoft.Network/virtualNetworks/appservice-private-network/subnets/integration-frontendcompute",
+          },
+        ]);
+      }
+      if (command.args?.includes("publicNetworkAccess")) return "Disabled\n";
+      if (command.args?.includes("access-restriction")) return "[]";
+      return "/subscriptions/subscription/resourceGroups/resources/resource\n";
+    }
+
+    override async execute(command: Command): Promise<void> {
+      executed.push(command);
+    }
+  }
+
+  await ensureAppServicePrivateEndpoint(
+    new ExistingPrivateEndpointDeployment(),
+    {
+      resourceGroup: "resources",
+      location: "westus2",
+      sourceSiteName: "frontend",
+      targetSiteName: "backend",
+      sourceResourceName: "frontendCompute",
+      targetResourceName: "backendCompute",
+      subscription: "subscription",
+      publicNetworkAccess: "Disabled",
+    },
+  );
+
+  assert.deepEqual(executed, []);
+});
+
 test("Teams provisioning uses the component-authored lifecycle", async () => {
   const root = await mkdtemp(join(tmpdir(), "deploy-js-teams-"));
   const source = join(root, "source");
@@ -329,5 +473,125 @@ provision:
   assert.equal(
     await readFile(join(source, "teamsapp.yml"), "utf8"),
     sourceLifecycle,
+  );
+});
+
+test("Teams provisioning installs the generated app in its target team", async () => {
+  const root = await mkdtemp(join(tmpdir(), "deploy-js-teams-install-"));
+  const source = join(root, "source");
+  await mkdir(join(source, "env"), { recursive: true });
+  await mkdir(join(source, "appPackage", "build"), { recursive: true });
+  await writeFile(join(source, "teamsapp.yml"), "version: v1.7\n");
+  await writeFile(
+    join(
+      source,
+      "appPackage",
+      "build",
+      "appPackage.deploy-js-dev.zip",
+    ),
+    "package",
+  );
+  const manifestId = "9668bcb5-a50b-4e39-a136-b3301305de66";
+  const catalogAppId = "0b823f54-1292-463d-a9a3-a1befc6b5e9a";
+  const teamId = "af71663c-8492-4c4a-9ac4-a3dbaa71fa7b";
+  const commands: Command[] = [];
+
+  class TeamsInstallDeployment extends Deployment {
+    override async capture(command: Command): Promise<string> {
+      commands.push(command);
+      if (command.command === "az") {
+        return JSON.stringify({ value: [] });
+      }
+      return `TitleId: title-id\nAppId: ${catalogAppId}\n`;
+    }
+
+    override async execute(command: Command): Promise<void> {
+      commands.push(command);
+      if (command.command === "npx" && command.args?.includes("provision")) {
+        await writeFile(
+          join(source, "env", ".env.deploy-js-dev"),
+          `TEAMS_APP_ID=${manifestId}\n`,
+        );
+      }
+    }
+  }
+
+  await provisionTeamsApplication(
+    new TeamsInstallDeployment({ environment: "dev" }),
+    {
+      component: "frontend",
+      componentDirectory: source,
+      existingAppId: manifestId,
+      teamId,
+      manifestValues: { TEAMS_APP_NAME: "Test app" },
+    },
+  );
+
+  const sideload = commands.find(
+    (command) =>
+      command.command === "npx" && command.args?.includes("install"),
+  );
+  assert.ok(sideload);
+  assert.equal(sideload.cwd, source);
+  const graphInstall = commands.find(
+    (command) =>
+      command.command === "az" && command.args?.includes("post"),
+  );
+  assert.ok(graphInstall);
+  assert.ok(graphInstall.args?.includes(
+    `https://graph.microsoft.com/v1.0/teams/${teamId}/installedApps`,
+  ));
+});
+
+test("Teams provisioning skips an app already installed in its target team", async () => {
+  const root = await mkdtemp(join(tmpdir(), "deploy-js-teams-existing-"));
+  const source = join(root, "source");
+  await mkdir(join(source, "env"), { recursive: true });
+  await writeFile(join(source, "teamsapp.yml"), "version: v1.7\n");
+  const manifestId = "9668bcb5-a50b-4e39-a136-b3301305de66";
+  const commands: Command[] = [];
+
+  class ExistingTeamsDeployment extends Deployment {
+    override async capture(command: Command): Promise<string> {
+      commands.push(command);
+      return JSON.stringify({
+        value: [{ teamsApp: { externalId: manifestId } }],
+      });
+    }
+
+    override async execute(command: Command): Promise<void> {
+      commands.push(command);
+      if (command.command === "npx") {
+        await writeFile(
+          join(source, "env", ".env.deploy-js-dev"),
+          `TEAMS_APP_ID=${manifestId}\n`,
+        );
+      }
+    }
+  }
+
+  await provisionTeamsApplication(
+    new ExistingTeamsDeployment({ environment: "dev" }),
+    {
+      component: "frontend",
+      componentDirectory: source,
+      existingAppId: manifestId,
+      teamId: "af71663c-8492-4c4a-9ac4-a3dbaa71fa7b",
+      manifestValues: { TEAMS_APP_NAME: "Test app" },
+    },
+  );
+
+  assert.equal(
+    commands.filter(
+      (command) =>
+        command.command === "npx" && command.args?.includes("install"),
+    ).length,
+    0,
+  );
+  assert.equal(
+    commands.filter(
+      (command) => command.command === "az" && command.args?.includes("post"),
+    ).length,
+    0,
   );
 });

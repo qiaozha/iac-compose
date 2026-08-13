@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
@@ -218,7 +218,7 @@ test("generate provisions the current Microsoft Entra authentication contract", 
   assert.doesNotMatch(provisioning, /Microsoft\.Graph|allowedApplications/);
 });
 
-test("authorizes peer App Service identities for Microsoft Entra authentication", async () => {
+test("authorizes peer identities and generates private App Service networking", async () => {
   const root = await mkdtemp(join(tmpdir(), "deploy-js-peer-auth-"));
   const resourcesFile = join(root, "resource-requirements.json");
   const solutionFile = join(root, "solution.json");
@@ -238,7 +238,9 @@ test("authorizes peer App Service identities for Microsoft Entra authentication"
           configuration: {
             ingress: {
               mode: "restricted",
-              allowedSourceResources: ["frontendCompute"],
+              privateEndpoint: {
+                sourceResources: ["frontendCompute"],
+              },
             },
             authentication: {
               provider: "microsoft-entra",
@@ -267,14 +269,19 @@ test("authorizes peer App Service identities for Microsoft Entra authentication"
     JSON.stringify({
       schemaVersion: "1.0",
       components: [
-        { id: "backend", kind: "http-api", source: "components/backend" },
         { id: "frontend", kind: "http-api", source: "components/frontend" },
+        { id: "backend", kind: "http-api", source: "components/backend" },
       ],
     }),
   );
 
-  await generateDeploymentCode({ resourcesFile, solutionFile, outputDirectory });
+  const result = await generateDeploymentCode({
+    resourcesFile,
+    solutionFile,
+    outputDirectory,
+  });
 
+  assert.deepEqual(result.components, ["shared", "backend", "frontend"]);
   const frontend = await readFile(
     join(outputDirectory, "components/frontend/index.ts"),
     "utf8",
@@ -283,7 +290,11 @@ test("authorizes peer App Service identities for Microsoft Entra authentication"
     join(outputDirectory, "components/shared/identity-configuration.ts"),
     "utf8",
   );
-  assert.match(frontend, /ensureAppServicePeerIngress/);
+  assert.match(frontend, /ensureAppServicePrivateEndpoint/);
+  assert.doesNotMatch(frontend, /ensureAppServicePeerIngress/);
+  assert.match(frontend, /location: requiredEnv\("AZURE_LOCATION"\)/);
+  assert.match(frontend, /targetResourceName: "backendCompute"/);
+  assert.match(frontend, /publicNetworkAccess: "Disabled"/);
   assert.match(frontend, /configureEntraApplications/);
   assert.doesNotMatch(frontend, /ensureAppServicePeerAuthentication/);
   assert.match(identityConfiguration, /Microsoft\.Graph\/appRoleAssignedTo/);
@@ -314,6 +325,7 @@ test("reuses a configured Teams app manifest ID", async () => {
           requiredBy: ["frontend"],
           configuration: {
             existingAppId: "9668bcb5-a50b-4e39-a136-b3301305de66",
+            teamId: "af71663c-8492-4c4a-9ac4-a3dbaa71fa7b",
             manifestValues: {
               TEAMS_APP_ID: "9668bcb5-a50b-4e39-a136-b3301305de66",
               BOT_ID: "bot-id",
@@ -343,6 +355,10 @@ test("reuses a configured Teams app manifest ID", async () => {
   assert.match(
     frontend,
     /existingAppId: "9668bcb5-a50b-4e39-a136-b3301305de66"/,
+  );
+  assert.match(
+    frontend,
+    /teamId: "af71663c-8492-4c4a-9ac4-a3dbaa71fa7b"/,
   );
 });
 
@@ -736,19 +752,24 @@ test("renders explicit model, registry, and workflow identity resources", () => 
     assert.match(source, /\(workflow as any\)\.identity\.principalId as any/);
 });
 
-test("generated provisioning dependencies use GitHub release assets", async () => {
-  const dependencies = provisioningDependencies();
+test("generated provisioning dependencies use bundled release assets", async () => {
+  const repositoryRoot = resolve(".");
+  const outputDirectory = resolve("generated/deployment");
+  const dependencies = provisioningDependencies(
+    outputDirectory,
+    repositoryRoot,
+  );
   assert.ok(Object.keys(dependencies).length > 0);
   for (const [name, value] of Object.entries(dependencies)) {
     const packageName = name.slice("@azure/".length);
     assert.equal(
       value,
-      `https://github.com/Azure/js-provisioning-lib/releases/download/` +
-        `%40azure/${packageName}%400.1.0/azure-${packageName}-0.1.0.tgz`,
+      `file:../../vendor/azure-${packageName}-0.1.0.tgz`,
       name,
     );
+    await access(resolve(outputDirectory, value.slice("file:".length)));
   }
 
   const manifest = JSON.parse(await readFile(resolve("package.json"), "utf8"));
-  assert.ok(!manifest.files.includes("vendor"));
+  assert.ok(manifest.files.includes("vendor"));
 });

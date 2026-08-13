@@ -173,6 +173,21 @@ export interface AppServicePeerIngressOptions {
   priorityStart?: number;
 }
 
+export interface AppServicePrivateEndpointOptions {
+  resourceGroup: string;
+  location: string;
+  sourceSiteName: string;
+  targetSiteName: string;
+  subscription: string;
+  sourceResourceName?: string;
+  targetResourceName?: string;
+  publicNetworkAccess?: "Enabled" | "Disabled";
+  virtualNetworkName?: string;
+  virtualNetworkAddressPrefix?: string;
+  integrationSubnetAddressPrefix?: string;
+  privateEndpointSubnetAddressPrefix?: string;
+}
+
 export interface AppServiceReadyOptions {
   resourceGroup: string;
   siteName: string;
@@ -184,6 +199,7 @@ export interface AppServiceReadyOptions {
 interface AppServiceAccessRestriction {
   action?: string;
   ipAddress?: string;
+  name?: string;
   priority?: number;
   tag?: string;
 }
@@ -417,6 +433,427 @@ export async function ensureAppServicePeerIngress(
       ? {}
       : { priorityStart: options.priorityStart }),
   });
+}
+
+export async function ensureAppServicePrivateEndpoint(
+  deployment: Deployment,
+  options: AppServicePrivateEndpointOptions,
+): Promise<void> {
+  const subscriptionArgs = ["--subscription", options.subscription];
+  const virtualNetworkName =
+    options.virtualNetworkName ?? "appservice-private-network";
+  const sourceName = networkResourceName(
+    options.sourceResourceName ?? options.sourceSiteName,
+  );
+  const targetName = networkResourceName(
+    options.targetResourceName ?? options.targetSiteName,
+  );
+  const integrationSubnetName = `integration-${sourceName}`;
+  const privateEndpointSubnetName = "private-endpoints";
+  const privateEndpointName = `pe-${targetName}`;
+  const privateEndpointConnectionName = `connection-${targetName}`;
+  const privateDnsZoneName = "privatelink.azurewebsites.net";
+  const privateDnsLinkName = "appservice-private-network";
+  const privateDnsZoneGroupName = "default";
+  const virtualNetworkResourceId =
+    `/subscriptions/${options.subscription}/resourceGroups/${options.resourceGroup}` +
+    `/providers/Microsoft.Network/virtualNetworks/${virtualNetworkName}`;
+  const integrationSubnetResourceId =
+    `${virtualNetworkResourceId}/subnets/${integrationSubnetName}`;
+  const targetSiteResourceId =
+    `/subscriptions/${options.subscription}/resourceGroups/${options.resourceGroup}` +
+    `/providers/Microsoft.Web/sites/${options.targetSiteName}`;
+  const privateDnsZoneResourceId =
+    `/subscriptions/${options.subscription}/resourceGroups/${options.resourceGroup}` +
+    `/providers/Microsoft.Network/privateDnsZones/${privateDnsZoneName}`;
+
+  await ensureAzureResource(
+    deployment,
+    [
+      "network",
+      "vnet",
+      "show",
+      ...subscriptionArgs,
+      "--resource-group",
+      options.resourceGroup,
+      "--name",
+      virtualNetworkName,
+    ],
+    [
+      "network",
+      "vnet",
+      "create",
+      ...subscriptionArgs,
+      "--resource-group",
+      options.resourceGroup,
+      "--name",
+      virtualNetworkName,
+      "--location",
+      options.location,
+      "--address-prefixes",
+      options.virtualNetworkAddressPrefix ?? "10.20.0.0/16",
+      "--output",
+      "none",
+    ],
+  );
+  await ensureAzureResource(
+    deployment,
+    [
+      "network",
+      "vnet",
+      "subnet",
+      "show",
+      ...subscriptionArgs,
+      "--resource-group",
+      options.resourceGroup,
+      "--vnet-name",
+      virtualNetworkName,
+      "--name",
+      integrationSubnetName,
+    ],
+    [
+      "network",
+      "vnet",
+      "subnet",
+      "create",
+      ...subscriptionArgs,
+      "--resource-group",
+      options.resourceGroup,
+      "--vnet-name",
+      virtualNetworkName,
+      "--name",
+      integrationSubnetName,
+      "--address-prefixes",
+      options.integrationSubnetAddressPrefix ?? "10.20.0.0/26",
+      "--delegations",
+      "Microsoft.Web/serverFarms",
+      "--output",
+      "none",
+    ],
+  );
+  await ensureAzureResource(
+    deployment,
+    [
+      "network",
+      "vnet",
+      "subnet",
+      "show",
+      ...subscriptionArgs,
+      "--resource-group",
+      options.resourceGroup,
+      "--vnet-name",
+      virtualNetworkName,
+      "--name",
+      privateEndpointSubnetName,
+    ],
+    [
+      "network",
+      "vnet",
+      "subnet",
+      "create",
+      ...subscriptionArgs,
+      "--resource-group",
+      options.resourceGroup,
+      "--vnet-name",
+      virtualNetworkName,
+      "--name",
+      privateEndpointSubnetName,
+      "--address-prefixes",
+      options.privateEndpointSubnetAddressPrefix ?? "10.20.1.0/24",
+      "--private-endpoint-network-policies",
+      "Disabled",
+      "--output",
+      "none",
+    ],
+  );
+  await ensureAzureResource(
+    deployment,
+    [
+      "network",
+      "private-dns",
+      "zone",
+      "show",
+      ...subscriptionArgs,
+      "--resource-group",
+      options.resourceGroup,
+      "--name",
+      privateDnsZoneName,
+    ],
+    [
+      "network",
+      "private-dns",
+      "zone",
+      "create",
+      ...subscriptionArgs,
+      "--resource-group",
+      options.resourceGroup,
+      "--name",
+      privateDnsZoneName,
+      "--output",
+      "none",
+    ],
+  );
+  await ensureAzureResource(
+    deployment,
+    [
+      "network",
+      "private-dns",
+      "link",
+      "vnet",
+      "show",
+      ...subscriptionArgs,
+      "--resource-group",
+      options.resourceGroup,
+      "--zone-name",
+      privateDnsZoneName,
+      "--name",
+      privateDnsLinkName,
+    ],
+    [
+      "network",
+      "private-dns",
+      "link",
+      "vnet",
+      "create",
+      ...subscriptionArgs,
+      "--resource-group",
+      options.resourceGroup,
+      "--zone-name",
+      privateDnsZoneName,
+      "--name",
+      privateDnsLinkName,
+      "--virtual-network",
+      virtualNetworkResourceId,
+      "--registration-enabled",
+      "false",
+      "--output",
+      "none",
+    ],
+  );
+  await ensureAzureResource(
+    deployment,
+    [
+      "network",
+      "private-endpoint",
+      "show",
+      ...subscriptionArgs,
+      "--resource-group",
+      options.resourceGroup,
+      "--name",
+      privateEndpointName,
+    ],
+    [
+      "network",
+      "private-endpoint",
+      "create",
+      ...subscriptionArgs,
+      "--resource-group",
+      options.resourceGroup,
+      "--name",
+      privateEndpointName,
+      "--location",
+      options.location,
+      "--vnet-name",
+      virtualNetworkName,
+      "--subnet",
+      privateEndpointSubnetName,
+      "--private-connection-resource-id",
+      targetSiteResourceId,
+      "--group-id",
+      "sites",
+      "--connection-name",
+      privateEndpointConnectionName,
+      "--output",
+      "none",
+    ],
+  );
+  await ensureAzureResource(
+    deployment,
+    [
+      "network",
+      "private-endpoint",
+      "dns-zone-group",
+      "show",
+      ...subscriptionArgs,
+      "--resource-group",
+      options.resourceGroup,
+      "--endpoint-name",
+      privateEndpointName,
+      "--name",
+      privateDnsZoneGroupName,
+    ],
+    [
+      "network",
+      "private-endpoint",
+      "dns-zone-group",
+      "create",
+      ...subscriptionArgs,
+      "--resource-group",
+      options.resourceGroup,
+      "--endpoint-name",
+      privateEndpointName,
+      "--name",
+      privateDnsZoneGroupName,
+      "--private-dns-zone",
+      privateDnsZoneResourceId,
+      "--zone-name",
+      privateDnsZoneName,
+      "--output",
+      "none",
+    ],
+  );
+
+  const integrations = await captureAzureJson<
+    readonly { vnetResourceId?: string }[]
+  >(deployment, [
+    "webapp",
+    "vnet-integration",
+    "list",
+    ...subscriptionArgs,
+    "--resource-group",
+    options.resourceGroup,
+    "--name",
+    options.sourceSiteName,
+  ]).catch(() => []);
+  const normalizedIntegrationSubnetId = integrationSubnetResourceId.toLowerCase();
+  const hasIntegration = integrations.some(
+    (integration) =>
+      integration.vnetResourceId?.toLowerCase() === normalizedIntegrationSubnetId,
+  );
+  if (!hasIntegration) {
+    const existingIntegration = integrations.find(
+      (integration) => integration.vnetResourceId?.trim(),
+    );
+    if (existingIntegration?.vnetResourceId) {
+      throw new Error(
+        `App Service '${options.sourceSiteName}' is already integrated with '${existingIntegration.vnetResourceId}'.`,
+      );
+    }
+    await runAzure(deployment, [
+      "webapp",
+      "vnet-integration",
+      "add",
+      ...subscriptionArgs,
+      "--resource-group",
+      options.resourceGroup,
+      "--name",
+      options.sourceSiteName,
+      "--vnet",
+      virtualNetworkName,
+      "--subnet",
+      integrationSubnetName,
+      "--output",
+      "none",
+    ]);
+  }
+
+  if (options.publicNetworkAccess) {
+    const publicNetworkAccess = (
+      await captureAzure(deployment, [
+        "webapp",
+        "show",
+        ...subscriptionArgs,
+        "--resource-group",
+        options.resourceGroup,
+        "--name",
+        options.targetSiteName,
+        "--query",
+        "publicNetworkAccess",
+        "--output",
+        "tsv",
+      ])
+    ).trim();
+    if (
+      publicNetworkAccess.toLowerCase() !==
+      options.publicNetworkAccess.toLowerCase()
+    ) {
+      await runAzure(deployment, [
+        "webapp",
+        "update",
+        ...subscriptionArgs,
+        "--resource-group",
+        options.resourceGroup,
+        "--name",
+        options.targetSiteName,
+        "--set",
+        `publicNetworkAccess=${options.publicNetworkAccess}`,
+        "--output",
+        "none",
+      ]);
+    }
+  }
+
+  const legacyRulePrefix =
+    `Allow ${options.sourceResourceName ?? options.sourceSiteName} `;
+  const legacyRulePrefixLower = legacyRulePrefix.toLowerCase();
+  const restrictions = await captureAzureJson<
+    readonly AppServiceAccessRestriction[]
+  >(deployment, [
+    "webapp",
+    "config",
+    "access-restriction",
+    "show",
+    ...subscriptionArgs,
+    "--resource-group",
+    options.resourceGroup,
+    "--name",
+    options.targetSiteName,
+    "--query",
+    "ipSecurityRestrictions",
+  ]);
+  for (const restriction of restrictions) {
+    const ruleName = restriction.name?.trim();
+    if (
+      restriction.action?.toLowerCase() !== "allow" ||
+      !ruleName?.toLowerCase().startsWith(legacyRulePrefixLower) ||
+      !/^\d+$/.test(ruleName.slice(legacyRulePrefix.length))
+    ) {
+      continue;
+    }
+    await runAzure(deployment, [
+      "webapp",
+      "config",
+      "access-restriction",
+      "remove",
+      ...subscriptionArgs,
+      "--resource-group",
+      options.resourceGroup,
+      "--name",
+      options.targetSiteName,
+      "--rule-name",
+      ruleName,
+      "--output",
+      "none",
+    ]);
+  }
+}
+
+async function ensureAzureResource(
+  deployment: Deployment,
+  showArgs: readonly string[],
+  createArgs: readonly string[],
+): Promise<void> {
+  const resourceId = (
+    await captureAzure(deployment, [
+      ...showArgs,
+      "--query",
+      "id",
+      "--output",
+      "tsv",
+    ]).catch(() => "")
+  ).trim();
+  if (!resourceId) await runAzure(deployment, createArgs);
+}
+
+function networkResourceName(value: string): string {
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, "-")
+      .replace(/-{2,}/g, "-")
+      .replace(/^-|-$/g, "") || "app"
+  );
 }
 
 function normalizeIpAddress(value: string): string {

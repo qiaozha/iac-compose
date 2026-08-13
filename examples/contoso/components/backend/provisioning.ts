@@ -1,8 +1,8 @@
 import {
   bicepRef,
   createBicepParameterFile,
-  renderBicepParameterFile,
   renderBicepFiles,
+  renderBicepParameterFile,
 } from "@azure/provisioning-bicep";
 import { fn, Stack } from "@azure/provisioning-core";
 import { serialize } from "@azure/provisioning-serialization";

@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import {
   deployAppServiceContainer,
   ensureAppServiceIngress,
-  ensureAppServicePeerIngress,
+  ensureAppServicePrivateEndpoint,
   prepareAppServiceContainer,
   provisionTeamsApplication,
   type Deployment,
@@ -51,13 +51,16 @@ export async function frontend(deployment: Deployment): Promise<void> {
       subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
     });
   });
-  await deployment.deploy("configure frontendCompute access to backendCompute", async () => {
-    await ensureAppServicePeerIngress(deployment, {
+  await deployment.deploy("configure frontendCompute private access to backendCompute", async () => {
+    await ensureAppServicePrivateEndpoint(deployment, {
       resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
+      location: requiredEnv("AZURE_LOCATION"),
       sourceSiteName: requiredEnv("DEPLOY_RESOURCE_FRONTENDCOMPUTE_NAME"),
       targetSiteName: requiredEnv("DEPLOY_RESOURCE_BACKENDCOMPUTE_NAME"),
       sourceResourceName: "frontendCompute",
+      targetResourceName: "backendCompute",
       subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
+      publicNetworkAccess: "Enabled",
     });
   });
   const service = {
@@ -96,6 +99,7 @@ export async function frontend(deployment: Deployment): Promise<void> {
       component: "frontend",
       componentDirectory: resolve(packageRoot, "components/frontend"),
       existingAppId: "9668bcb5-a50b-4e39-a136-b3301305de66",
+      teamId: "af71663c-8492-4c4a-9ac4-a3dbaa71fa7b",
       manifestValues: {
         "BOT_ID": deploymentValue(deployment, "botClientId"),
         "DEVELOPER_NAME": "Contoso",

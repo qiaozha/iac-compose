@@ -99,12 +99,16 @@ export function planResourceValidation(
 ): ResourceValidationPlan {
   const providers = new Set<string>();
   for (const resource of requirements.resources) {
-    const supportedProviders = providerNamespacesByKind[resource.kind];
-    if (!supportedProviders) {
+    const baseProviders = providerNamespacesByKind[resource.kind];
+    if (!baseProviders) {
       throw new Error(
         `Resource '${resource.id}' uses unsupported kind '${resource.kind}'.`,
       );
     }
+    const supportedProviders = resource.kind === "container-host" &&
+        hasPrivateEndpointSources(resource)
+      ? [...baseProviders, "Microsoft.Network"]
+      : baseProviders;
     for (const provider of supportedProviders) providers.add(provider);
     validateDeclaredProviders(resource, supportedProviders);
   }
@@ -136,6 +140,30 @@ export function planResourceValidation(
     providers: [...providers].sort(),
     roles,
   };
+}
+
+function hasPrivateEndpointSources(resource: ResourceRequirement): boolean {
+  if (
+    typeof resource.configuration !== "object" ||
+    resource.configuration === null ||
+    Array.isArray(resource.configuration)
+  ) {
+    return false;
+  }
+  const configuration = resource.configuration as Record<string, unknown>;
+  const ingress = configuration.ingress;
+  if (typeof ingress !== "object" || ingress === null || Array.isArray(ingress)) {
+    return false;
+  }
+  const ingressConfiguration = ingress as Record<string, unknown>;
+  const privateEndpoint = ingressConfiguration.privateEndpoint;
+  const sourceResources =
+    typeof privateEndpoint === "object" &&
+      privateEndpoint !== null &&
+      !Array.isArray(privateEndpoint)
+      ? (privateEndpoint as Record<string, unknown>).sourceResources
+      : ingressConfiguration.allowedSourceResources;
+  return Array.isArray(sourceResources) && sourceResources.length > 0;
 }
 
 export async function validateResourceRequirements(
