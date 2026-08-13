@@ -1,7 +1,7 @@
 import {
   bicepRef,
   createBicepParameterFile,
-  renderBicepFile,
+  renderBicepParameterFile,
 } from "@azure/provisioning-bicep";
 import { fn, Stack, type ExpressionOrValue } from "@azure/provisioning-core";
 
@@ -156,5 +156,5 @@ const parameterFile = createBicepParameterFile("main.bicepparam", {
 export const outputJson = rendered.outputJson;
 export const outputBicep = [
   { ...rendered.main, path: "main.bicep" },
-  renderBicepFile(parameterFile),
+  renderBicepParameterFile(parameterFile),
 ];

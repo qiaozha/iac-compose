@@ -119,7 +119,7 @@ export async function generateDeploymentCode(
         dependencies: {
           "imperative-deploy": `file:${localPackagePath}`,
           ...(requirements.resources.length > 0
-            ? provisioningDependencies(outputDirectory, repositoryRoot)
+            ? provisioningDependencies()
             : {}),
         },
         devDependencies: { "@types/node": "^24.0.0", typescript: "^6.0.0" },

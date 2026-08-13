@@ -7,7 +7,10 @@ import { test } from "node:test";
 import { promisify } from "node:util";
 
 import { generateDeploymentCode } from "../src/generator.js";
-import { renderProvisioningSource } from "../src/provisioning-source.js";
+import {
+  provisioningDependencies,
+  renderProvisioningSource,
+} from "../src/provisioning-source.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -733,7 +736,19 @@ test("renders explicit model, registry, and workflow identity resources", () => 
     assert.match(source, /\(workflow as any\)\.identity\.principalId as any/);
 });
 
-test("published package includes provisioning SDK tarballs", async () => {
+test("generated provisioning dependencies use GitHub release assets", async () => {
+  const dependencies = provisioningDependencies();
+  assert.ok(Object.keys(dependencies).length > 0);
+  for (const [name, value] of Object.entries(dependencies)) {
+    const packageName = name.slice("@azure/".length);
+    assert.equal(
+      value,
+      `https://github.com/Azure/js-provisioning-lib/releases/download/` +
+        `%40azure/${packageName}%400.1.0/azure-${packageName}-0.1.0.tgz`,
+      name,
+    );
+  }
+
   const manifest = JSON.parse(await readFile(resolve("package.json"), "utf8"));
-  assert.ok(manifest.files.includes("vendor"));
+  assert.ok(!manifest.files.includes("vendor"));
 });

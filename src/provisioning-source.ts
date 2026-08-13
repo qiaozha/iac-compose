@@ -1,5 +1,3 @@
-import { relative as pathRelative } from "node:path";
-
 import type {
   DeploymentSolution,
   ResourceRequirement,
@@ -118,7 +116,7 @@ export function renderGraphProvisioningHelper(): string {
 import { type ExpressionOrValue, type Stack } from "@azure/provisioning-core";
 import {
   serialize,
-  serializeValue,
+  serializeExpression,
   type SerializableValue,
 } from "@azure/provisioning-serialization";
 import type {
@@ -165,7 +163,7 @@ export function renderGraphStack(
 function createGraphResource(
   resource: GraphResourceDefinition,
 ): ResourceDeclarationNode {
-  const body = serializeValue(resource.body);
+  const body = serializeExpression(resource.body);
   if (body.kind !== "object") {
     throw new Error(\`Graph resource '\${resource.identifier}' must be an object.\`);
   }
@@ -179,7 +177,7 @@ function createGraphResource(
         ? body
         : {
             kind: "if-condition",
-            condition: serializeValue(resource.condition),
+            condition: serializeExpression(resource.condition),
             body,
           },
   };
@@ -225,7 +223,7 @@ stack.outputs.add(${JSON.stringify(entraOutput(plan.resource.id, "APPLICATION_UN
   return `import {
   bicepRef,
   createBicepParameterFile,
-  renderBicepFile,
+  renderBicepParameterFile,
 } from "@azure/provisioning-bicep";
 import { fn, Stack } from "@azure/provisioning-core";
 
@@ -247,7 +245,7 @@ ${bindings}
 export const outputJson = rendered.outputJson;
 export const outputBicep = [
   { ...rendered.main, path: "main.bicep" },
-  renderBicepFile(parameterFile),
+  renderBicepParameterFile(parameterFile),
 ];
 `;
 }
@@ -393,7 +391,7 @@ ${assignments}`;
   return `import {
   bicepRef,
   createBicepParameterFile,
-  renderBicepFile,
+  renderBicepParameterFile,
 } from "@azure/provisioning-bicep";
 import { fn, Stack, type ExpressionOrValue } from "@azure/provisioning-core";
 
@@ -420,7 +418,7 @@ ${bindings}
 export const outputJson = rendered.outputJson;
 export const outputBicep = [
   { ...rendered.main, path: "main.bicep" },
-  renderBicepFile(parameterFile),
+  renderBicepParameterFile(parameterFile),
 ];
 `;
 }
@@ -693,14 +691,10 @@ function normalizeApplicationRole(role: ApplicationRole): Record<string, unknown
 `;
 }
 
-export function provisioningDependencies(
-  outputDirectory: string,
-  repositoryRoot: string,
-): Readonly<Record<string, string>> {
-  const vendorRoot = relativePath(
-    outputDirectory,
-    `${repositoryRoot}/vendor`,
-  );
+export function provisioningDependencies(): Readonly<Record<string, string>> {
+  const version = "0.1.0";
+  const releaseRoot =
+    "https://github.com/Azure/js-provisioning-lib/releases/download";
   const packages = [
     "appconfiguration",
     "applicationinsights",
@@ -722,7 +716,7 @@ export function provisioningDependencies(
   return Object.fromEntries(
     packages.map((name) => [
       `@azure/provisioning-${name}`,
-      `file:${vendorRoot}/azure-provisioning-${name}-0.1.0.tgz`,
+      `${releaseRoot}/%40azure/provisioning-${name}%40${version}/azure-provisioning-${name}-${version}.tgz`,
     ]),
   );
 }
@@ -790,8 +784,8 @@ class ProvisioningSourceRenderer {
     this.#sections.push(`import {
   bicepRef,
   createBicepParameterFile,
-  renderBicepFile,
   renderBicepFiles,
+  renderBicepParameterFile,
 } from "@azure/provisioning-bicep";
 import { fn, Stack } from "@azure/provisioning-core";
 import { serialize } from "@azure/provisioning-serialization";
@@ -1541,7 +1535,7 @@ if (renderedStack === undefined) {
 }
 export const outputBicep = [
   { ...renderedStack, path: "main.bicep" },
-  renderBicepFile(parameterFile),
+  renderBicepParameterFile(parameterFile),
 ];
 `);
   }
@@ -2250,11 +2244,6 @@ function alphanumericPrefix(
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "")
     .slice(0, maximumPrefixLength);
-}
-
-function relativePath(from: string, to: string): string {
-  const value = pathRelative(from, to).replaceAll("\\", "/");
-  return value.startsWith(".") ? value : `./${value}`;
 }
 
 function asObject(value: unknown): Readonly<Record<string, unknown>> {

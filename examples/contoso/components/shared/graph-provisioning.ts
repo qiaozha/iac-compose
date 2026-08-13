@@ -2,7 +2,7 @@ import { renderBicepFile, type RenderedBicepFile } from "@azure/provisioning-bic
 import { type ExpressionOrValue, type Stack } from "@azure/provisioning-core";
 import {
   serialize,
-  serializeValue,
+  serializeExpression,
   type SerializableValue,
 } from "@azure/provisioning-serialization";
 import type {
@@ -49,7 +49,7 @@ export function renderGraphStack(
 function createGraphResource(
   resource: GraphResourceDefinition,
 ): ResourceDeclarationNode {
-  const body = serializeValue(resource.body);
+  const body = serializeExpression(resource.body);
   if (body.kind !== "object") {
     throw new Error(`Graph resource '${resource.identifier}' must be an object.`);
   }
@@ -63,7 +63,7 @@ function createGraphResource(
         ? body
         : {
             kind: "if-condition",
-            condition: serializeValue(resource.condition),
+            condition: serializeExpression(resource.condition),
             body,
           },
   };
