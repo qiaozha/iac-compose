@@ -51,7 +51,7 @@ deploy-js validate \
 
 Validation covers providers declared by `azureResourceTypes` and providers the
 generator adds implicitly. It requires `App Configuration Data Owner` for
-generated key writes, `AcrPush` for component images, and `Azure AI Developer`
+generated key writes, `AcrPush` for component images, and `Foundry User`
 when the solution deploys a hosted Foundry agent. Missing providers or roles
 make the command fail. Add `--grant` to assign missing roles at the target scope:
 
@@ -133,10 +133,15 @@ chatbot lifecycle while supplying generated manifest values through an isolated
 environment file. An interactive API connection must be authorized before its
 generated Logic App is enabled.
 
-Container resources with `authentication: "managed-identity"` receive an Entra
-API application and App Service Easy Auth configuration. Provisioning those
-resources requires permission to create Microsoft Graph applications and
-service principals in the target tenant.
+Container resources with `authentication: "microsoft-entra"` receive an Entra
+API application and App Service Easy Auth configuration. The nested
+`configuration.authentication` contract defines the delegated permission scope
+and authorized client application IDs used for Graph preauthorization and Easy
+Auth enforcement. Provisioning those resources requires permission to create
+Microsoft Graph applications and service principals in the target tenant.
+Generated container ingress sets the App Service default action to `Deny` for
+restricted policies and `Allow` for unrestricted policies, then adds any
+declared service-tag and peer App Service allow rules.
 
 Generated Azure AI accounts and their model deployment stages default to
 `eastus`. Set `AZURE_AI_LOCATION` to override that region. The region contributes

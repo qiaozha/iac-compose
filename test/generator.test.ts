@@ -33,6 +33,7 @@ test("generates chatbot-style deployment code in dependency order", async () => 
           source: "components/frontend",
           containerPort: 3978,
           configuration: {
+            ingress: { allowedServiceTags: ["AzureBotService"] },
             runtimeSettings: {
               BACKEND_BASE_URL: "${output.backendBaseUrl}",
             },
@@ -45,6 +46,7 @@ test("generates chatbot-style deployment code in dependency order", async () => 
           requiredBy: ["backend"],
           source: "components/backend",
           containerPort: 8080,
+          configuration: { ingress: { mode: "unrestricted" } },
           produces: ["backendBaseUrl"],
         },
       ],
@@ -93,6 +95,10 @@ test("generates chatbot-style deployment code in dependency order", async () => 
     join(outputDirectory, "components/backend/provisioning.ts"),
     "utf8",
   );
+  const backend = await readFile(
+    join(outputDirectory, "components/backend/index.ts"),
+    "utf8",
+  );
   assert.match(provisioning, /new Stack\(/);
   assert.doesNotMatch(provisioning, /new Site\(/);
   assert.match(backendProvisioning, /new Site\(/);
@@ -112,10 +118,12 @@ test("generates chatbot-style deployment code in dependency order", async () => 
   );
   assert.match(frontend, /components\/frontend/);
   assert.match(frontend, /deployAppServiceContainer/);
+  assert.match(frontend, /defaultAction: "Deny"/);
   assert.doesNotMatch(frontend, /const resources\s*=|"requiredBy"|"produces"/);
+  assert.match(backend, /defaultAction: "Allow"/);
 });
 
-test("generate resolves the fixed chatbot Service Tree ID in provisioning", async () => {
+test("generate provisions the current Microsoft Entra authentication contract", async () => {
   const root = await mkdtemp(join(tmpdir(), "deploy-js-service-tree-"));
   const resourcesFile = join(root, "resource-requirements.json");
   const solutionFile = join(root, "solution.json");
@@ -133,7 +141,16 @@ test("generate resolves the fixed chatbot Service Tree ID in provisioning", asyn
           kind: "container-host",
           requiredBy: ["backend"],
           source: "components/backend",
-          authentication: "managed-identity",
+          authentication: "microsoft-entra",
+          configuration: {
+            authentication: {
+              provider: "microsoft-entra",
+              delegatedPermissionScope: "token",
+              authorizedClientApplicationIds: [
+                "04b07795-8ddb-461a-bbee-02f9e1bf7b46",
+              ],
+            },
+          },
           produces: ["backendBaseUrl"],
         },
       ],
@@ -166,11 +183,164 @@ test("generate resolves the fixed chatbot Service Tree ID in provisioning", asyn
     join(outputDirectory, "components/backend/provisioning.ts"),
     "utf8",
   );
+  const identityBootstrap = await readFile(
+    join(outputDirectory, "components/shared/identity-bootstrap.ts"),
+    "utf8",
+  );
+  const identityConfiguration = await readFile(
+    join(outputDirectory, "components/shared/identity-configuration.ts"),
+    "utf8",
+  );
+  const identityLifecycle = await readFile(
+    join(outputDirectory, "components/shared/identity.ts"),
+    "utf8",
+  );
   assert.match(
-    provisioning,
+    identityBootstrap,
     /serviceManagementReference: "c29c71f8-2db7-4d9e-bf8b-e6b0965ecde4"/,
   );
-  assert.doesNotMatch(provisioning, /SERVICE_MANAGEMENT_REFERENCE/);
+  assert.match(identityConfiguration, /oauth2PermissionScopes/);
+  assert.match(identityConfiguration, /value: "token"/);
+  assert.match(identityConfiguration, /preAuthorizedApplications/);
+  assert.match(identityConfiguration, /value: "access_as_application"/);
+  assert.match(
+    identityConfiguration,
+    /appId: "04b07795-8ddb-461a-bbee-02f9e1bf7b46"/,
+  );
+  assert.match(identityConfiguration, /ExistingPermissionScopes/);
+  assert.match(identityConfiguration, /ExistingApplicationRoles/);
+  assert.match(identityLifecycle, /server application permissions/);
+  assert.match(identityLifecycle, /server application pre-authorization/);
+  assert.match(provisioning, /backendComputeAudience/);
+  assert.doesNotMatch(provisioning, /Microsoft\.Graph|allowedApplications/);
+});
+
+test("authorizes peer App Service identities for Microsoft Entra authentication", async () => {
+  const root = await mkdtemp(join(tmpdir(), "deploy-js-peer-auth-"));
+  const resourcesFile = join(root, "resource-requirements.json");
+  const solutionFile = join(root, "solution.json");
+  const outputDirectory = join(root, "deployment");
+  await writeFile(
+    resourcesFile,
+    JSON.stringify({
+      schemaVersion: "1.0",
+      solution: { name: "support", enabledComponents: ["backend", "frontend"] },
+      resources: [
+        {
+          id: "backendCompute",
+          kind: "container-host",
+          requiredBy: ["backend"],
+          source: "components/backend",
+          authentication: "microsoft-entra",
+          configuration: {
+            ingress: {
+              mode: "restricted",
+              allowedSourceResources: ["frontendCompute"],
+            },
+            authentication: {
+              provider: "microsoft-entra",
+              delegatedPermissionScope: "token",
+              authorizedClientApplicationIds: ["existing-client-id"],
+            },
+          },
+          produces: ["backendBaseUrl"],
+        },
+        {
+          id: "frontendCompute",
+          kind: "container-host",
+          requiredBy: ["frontend"],
+          source: "components/frontend",
+          produces: [
+            "frontendBaseUrl",
+            "frontendIdentityPrincipalId",
+            "frontendIdentityResourceId",
+          ],
+        },
+      ],
+    }),
+  );
+  await writeFile(
+    solutionFile,
+    JSON.stringify({
+      schemaVersion: "1.0",
+      components: [
+        { id: "backend", kind: "http-api", source: "components/backend" },
+        { id: "frontend", kind: "http-api", source: "components/frontend" },
+      ],
+    }),
+  );
+
+  await generateDeploymentCode({ resourcesFile, solutionFile, outputDirectory });
+
+  const frontend = await readFile(
+    join(outputDirectory, "components/frontend/index.ts"),
+    "utf8",
+  );
+  const identityConfiguration = await readFile(
+    join(outputDirectory, "components/shared/identity-configuration.ts"),
+    "utf8",
+  );
+  assert.match(frontend, /ensureAppServicePeerIngress/);
+  assert.match(frontend, /configureEntraApplications/);
+  assert.doesNotMatch(frontend, /ensureAppServicePeerAuthentication/);
+  assert.match(identityConfiguration, /Microsoft\.Graph\/appRoleAssignedTo/);
+  assert.match(identityConfiguration, /frontendIdentityPrincipalId/);
+});
+
+test("reuses a configured Teams app manifest ID", async () => {
+  const root = await mkdtemp(join(tmpdir(), "deploy-js-teams-app-id-"));
+  const resourcesFile = join(root, "resource-requirements.json");
+  const solutionFile = join(root, "solution.json");
+  const outputDirectory = join(root, "deployment");
+  await writeFile(
+    resourcesFile,
+    JSON.stringify({
+      schemaVersion: "1.0",
+      solution: { name: "support", enabledComponents: ["frontend"] },
+      resources: [
+        {
+          id: "frontendCompute",
+          kind: "container-host",
+          requiredBy: ["frontend"],
+          source: "components/frontend",
+          produces: ["frontendBaseUrl"],
+        },
+        {
+          id: "teamsApplication",
+          kind: "teams-application",
+          requiredBy: ["frontend"],
+          configuration: {
+            existingAppId: "9668bcb5-a50b-4e39-a136-b3301305de66",
+            manifestValues: {
+              TEAMS_APP_ID: "9668bcb5-a50b-4e39-a136-b3301305de66",
+              BOT_ID: "bot-id",
+            },
+          },
+          produces: ["teamsAppId"],
+        },
+      ],
+    }),
+  );
+  await writeFile(
+    solutionFile,
+    JSON.stringify({
+      schemaVersion: "1.0",
+      components: [
+        { id: "frontend", kind: "http-api", source: "components/frontend" },
+      ],
+    }),
+  );
+
+  await generateDeploymentCode({ resourcesFile, solutionFile, outputDirectory });
+
+  const frontend = await readFile(
+    join(outputDirectory, "components/frontend/index.ts"),
+    "utf8",
+  );
+  assert.match(
+    frontend,
+    /existingAppId: "9668bcb5-a50b-4e39-a136-b3301305de66"/,
+  );
 });
 
 test("orders hosted agents before application services", async () => {

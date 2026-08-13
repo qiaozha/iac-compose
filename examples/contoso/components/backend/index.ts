@@ -5,6 +5,7 @@ import {
   ensureAppServiceIngress,
   prepareAppServiceContainer,
   type Deployment,
+  waitForAppServiceReady,
 } from "imperative-deploy";
 import {
   persistEnvironment,
@@ -42,6 +43,7 @@ export async function backend(deployment: Deployment): Promise<void> {
       resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
       siteName: requiredEnv("DEPLOY_RESOURCE_BACKENDCOMPUTE_NAME"),
       serviceTags: ["LogicApps"],
+      defaultAction: "Deny",
       subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
     });
   });
@@ -63,6 +65,11 @@ export async function backend(deployment: Deployment): Promise<void> {
   if (deployment.dryRun) await prepareAppServiceContainer(deployment, service);
   await deployment.deploy("backend container 'backendCompute'", async () => {
     Object.assign(outputs, await deployAppServiceContainer(deployment, service));
+    await waitForAppServiceReady(deployment, {
+      resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
+      siteName: requiredEnv("DEPLOY_RESOURCE_BACKENDCOMPUTE_NAME"),
+      subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
+    });
   });
 
   await deployment.deploy("persist backend deployment outputs", async () => {

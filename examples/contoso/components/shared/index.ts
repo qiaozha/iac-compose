@@ -9,6 +9,7 @@ import {
   sharedProvisioningEntrypoint,
 } from "../../runtime/paths.js";
 import { solutionName } from "./provisioning.js";
+import { ensureEntraApplications } from "./identity.js";
 
 export async function shared(deployment: Deployment): Promise<void> {
   const environment = requiredEnv("AZURE_ENV_NAME");
@@ -33,7 +34,7 @@ export async function shared(deployment: Deployment): Promise<void> {
       roles: [
             {"provider":"Microsoft.AppConfiguration","role":"App Configuration Data Owner","roleDefinitionId":"5ae67dd6-50cb-40e7-96ff-dc2bfa4b606b","reason":"write generated application settings"},
         {"provider":"Microsoft.ContainerRegistry","role":"AcrPush","roleDefinitionId":"8311e382-0749-4cb8-b61a-304f252e45ec","reason":"publish generated component images"},
-        {"provider":"Microsoft.CognitiveServices","role":"Azure AI Developer","roleDefinitionId":"64702f94-c441-49e6-a78b-ef80e0188fee","reason":"deploy the hosted Foundry agent"},
+        {"provider":"Microsoft.CognitiveServices","role":"Foundry User","roleDefinitionId":"53ca6127-db72-4b80-b1b0-d745d6d5456d","reason":"deploy the hosted Foundry agent"},
       ],
     });
   });
@@ -49,4 +50,5 @@ export async function shared(deployment: Deployment): Promise<void> {
   await deployment.deploy("persist solution infrastructure", async () => {
     await persistEnvironment(environment, outputs);
   });
+  await ensureEntraApplications(deployment);
 }

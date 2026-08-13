@@ -8,7 +8,12 @@ import {
 } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  entraConfigurationOwner,
+  hasEntraApplications,
   provisioningDependencies,
+  renderEntraIdentityBootstrapSource,
+  renderEntraIdentityConfigurationSource,
+  renderEntraIdentityLifecycleSource,
   renderGraphProvisioningHelper,
   renderProvisioningSources,
   renderWorkflowDefinitionSources,
@@ -99,6 +104,8 @@ export async function generateDeploymentCode(
     serviceManagementReference: chatbotServiceManagementReference,
   } as const;
   const provisioningSources = renderProvisioningSources(sourceOptions);
+  const hasEntra = hasEntraApplications(sourceOptions);
+  const identityConfigurationOwner = entraConfigurationOwner(sourceOptions);
   const files = new Map<string, string>();
 
   files.set(
@@ -147,7 +154,7 @@ export async function generateDeploymentCode(
     "runtime/paths.ts",
     renderPaths(packagePath, ["shared", ...orderedComponents], [
       ...provisioningSources.keys(),
-    ]),
+    ], hasEntra),
   );
   files.set("runtime/environment.ts", renderEnvironment());
   for (const [owner, source] of provisioningSources) {
@@ -159,12 +166,26 @@ export async function generateDeploymentCode(
       renderGraphProvisioningHelper(),
     );
   }
+  if (hasEntra) {
+    files.set(
+      "components/shared/identity-bootstrap.ts",
+      renderEntraIdentityBootstrapSource(sourceOptions),
+    );
+    files.set(
+      "components/shared/identity-configuration.ts",
+      renderEntraIdentityConfigurationSource(sourceOptions),
+    );
+    files.set(
+      "components/shared/identity.ts",
+      renderEntraIdentityLifecycleSource(sourceOptions),
+    );
+  }
   for (const [path, contents] of renderWorkflowDefinitionSources(sourceOptions)) {
     files.set(path, contents);
   }
   files.set(
     "components/shared/index.ts",
-    renderSharedComponent(validationPlan.roles),
+    renderSharedComponent(validationPlan.roles, hasEntra),
   );
 
   for (const component of orderedComponents) {
@@ -184,6 +205,7 @@ export async function generateDeploymentCode(
         componentResources,
         requirements.resources,
         provisioningSources.has(component),
+        component === identityConfigurationOwner,
       ),
     );
   }
@@ -498,6 +520,7 @@ function renderPaths(
   packagePath: string,
   owners: readonly string[],
   provisioningOwners: readonly string[],
+  hasEntra: boolean,
 ): string {
   const generatedProjects = owners
     .map(
@@ -521,6 +544,15 @@ export const stateRoot = resolve(deploymentRoot, ".state");
 export const environmentRoot = resolve(deploymentRoot, "environments");
 ${generatedProjects}
 ${provisioningEntrypoints}
+${hasEntra ? `export const generatedIdentityProject = resolve(generatedRoot, "identity");
+export const identityBootstrapEntrypoint = resolve(
+  deploymentRoot,
+  "components/shared/identity-bootstrap.ts",
+);
+export const identityConfigurationEntrypoint = resolve(
+  deploymentRoot,
+  "components/shared/identity-configuration.ts",
+);` : ""}
 `;
 }
 
@@ -592,6 +624,7 @@ function renderSharedComponent(
     readonly roleDefinitionId: string;
     readonly reason: string;
   }[],
+  hasEntra: boolean,
 ): string {
   const renderedRoles = roles
     .map((role) => `        ${JSON.stringify(role)},`)
@@ -622,6 +655,7 @@ import {
   sharedProvisioningEntrypoint,
 } from "../../runtime/paths.js";
 import { solutionName } from "./provisioning.js";
+${hasEntra ? 'import { ensureEntraApplications } from "./identity.js";' : ""}
 
 export async function shared(deployment: Deployment): Promise<void> {
   const environment = requiredEnv("AZURE_ENV_NAME");
@@ -648,7 +682,8 @@ ${grantStep}  const outputs = await deployment.provision("solution infrastructur
   await deployment.deploy("persist solution infrastructure", async () => {
     await persistEnvironment(environment, outputs);
   });
-}
+${hasEntra ? `  await ensureEntraApplications(deployment);
+` : ""}}
 `;
 }
 
@@ -660,6 +695,7 @@ function renderComponent(
   resources: readonly ResourceRequirement[],
   allResources: readonly ResourceRequirement[],
   hasProvisioning: boolean,
+  configureEntra: boolean,
 ): string {
   if (kind === "hosted-agent") {
     return renderHostedAgentComponent(
@@ -675,7 +711,9 @@ function renderComponent(
       component,
       functionName,
       resources,
+      allResources,
       hasProvisioning,
+      configureEntra,
     );
   }
   return renderContainerComponent(
@@ -685,6 +723,7 @@ function renderComponent(
     resources,
     allResources,
     hasProvisioning,
+    configureEntra,
   );
 }
 
@@ -695,6 +734,7 @@ function renderContainerComponent(
   resources: readonly ResourceRequirement[],
   allResources: readonly ResourceRequirement[],
   hasProvisioning: boolean,
+  configureEntra: boolean,
 ): string {
   const containers = resources.filter(
     (candidate) =>
@@ -710,6 +750,24 @@ function renderContainerComponent(
   const configuration = asRecord(resource.configuration);
   const runtimeSettings = asRecord(configuration.runtimeSettings);
   const ingress = asRecord(configuration.ingress);
+  const ingressMode = ingress.mode === undefined
+    ? Object.keys(ingress).length > 0 ? "restricted" : undefined
+    : requiredString(
+        ingress.mode,
+        `${resource.id}.configuration.ingress.mode`,
+      );
+  if (
+    ingressMode !== undefined &&
+    ingressMode !== "restricted" &&
+    ingressMode !== "unrestricted"
+  ) {
+    throw new Error(
+      `${resource.id}.configuration.ingress.mode must be 'restricted' or 'unrestricted'.`,
+    );
+  }
+  const ingressDefaultAction = ingressMode === "restricted"
+    ? "Deny"
+    : ingressMode === "unrestricted" ? "Allow" : undefined;
   const allowedServiceTags =
     ingress.allowedServiceTags === undefined
       ? []
@@ -754,20 +812,27 @@ function renderContainerComponent(
     ? "\n  provisionTeamsApplication,"
     : "";
   const ingressImports = [
-    ...(allowedServiceTags.length > 0 ? ["  ensureAppServiceIngress,"] : []),
+    ...(ingressDefaultAction ? ["  ensureAppServiceIngress,"] : []),
     ...(peerIngressTargets.length > 0
       ? ["  ensureAppServicePeerIngress,"]
       : []),
   ];
   const ingressImport =
     ingressImports.length > 0 ? `\n${ingressImports.join("\n")}` : "";
+  const entraConfigurationImport = configureEntra
+    ? 'import { configureEntraApplications } from "../shared/identity.js";\n'
+    : "";
+  const entraConfigurationBlock = configureEntra
+    ? "  await configureEntraApplications(deployment);\n"
+    : "";
   const serviceTagIngressBlock =
-    allowedServiceTags.length > 0
+    ingressDefaultAction
       ? `  await deployment.deploy(${JSON.stringify(`configure ${component} ingress`)}, async () => {
     await ensureAppServiceIngress(deployment, {
       resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
       siteName: requiredEnv(${JSON.stringify(implementationOutputName(resource.id, "NAME"))}),
       serviceTags: ${JSON.stringify(allowedServiceTags)},
+      defaultAction: ${JSON.stringify(ingressDefaultAction)},
       subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
     });
   });
@@ -801,19 +866,20 @@ import {
   deployAppServiceContainer,${ingressImport}
   prepareAppServiceContainer,${teamsImport}
   type Deployment,
+  waitForAppServiceReady,
 } from "imperative-deploy";
 import {
   persistEnvironment,
   requiredEnv,
 } from "../../runtime/environment.js";
-import {
+${entraConfigurationImport}import {
 ${pathImports}
 } from "../../runtime/paths.js";
 
 export async function ${functionName}(deployment: Deployment): Promise<void> {
   const outputs: Record<string, string> = {};
 ${provisioning}
-${serviceTagIngressBlock}${peerIngressBlock}  const service = {
+${entraConfigurationBlock}${serviceTagIngressBlock}${peerIngressBlock}  const service = {
     directory: ${generatedProject},
     service: ${JSON.stringify(component)},
     ...(deployment.dryRun
@@ -831,6 +897,11 @@ ${environmentEntries}
   if (deployment.dryRun) await prepareAppServiceContainer(deployment, service);
   await deployment.deploy(${JSON.stringify(`${component} container '${resource.id}'`)}, async () => {
     Object.assign(outputs, await deployAppServiceContainer(deployment, service));
+    await waitForAppServiceReady(deployment, {
+      resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
+      siteName: requiredEnv(${JSON.stringify(implementationOutputName(resource.id, "NAME"))}),
+      subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
+    });
   });
 ${teamsBlock}
   await deployment.deploy("persist ${escapeTemplateLiteral(component)} deployment outputs", async () => {
@@ -961,6 +1032,15 @@ function renderTeamsApplicationBlock(
   source: string | undefined,
 ): string {
   const values = asRecord(asRecord(resource.configuration).manifestValues);
+  const existingAppId = asRecord(resource.configuration).existingAppId;
+  if (
+    existingAppId !== undefined &&
+    (typeof existingAppId !== "string" || !existingAppId.trim())
+  ) {
+    throw new Error(
+      `${resource.id}.configuration.existingAppId must be a non-empty string.`,
+    );
+  }
   const entries = Object.entries(values)
     .filter(([name]) => name !== "TEAMS_APP_ID")
     .map(
@@ -973,7 +1053,7 @@ function renderTeamsApplicationBlock(
     await provisionTeamsApplication(deployment, {
       component: ${JSON.stringify(component)},
       componentDirectory: resolve(packageRoot, ${JSON.stringify(source ?? ".")}),
-      manifestValues: {
+${existingAppId ? `      existingAppId: ${JSON.stringify(existingAppId)},\n` : ""}      manifestValues: {
 ${entries}
       },
       outputNames: ${JSON.stringify(resource.produces ?? [])},
@@ -985,7 +1065,9 @@ function renderWorkflowComponent(
   component: string,
   functionName: string,
   resources: readonly ResourceRequirement[],
+  allResources: readonly ResourceRequirement[],
   hasProvisioning: boolean,
+  configureEntra: boolean,
 ): string {
   const workflows = resources.filter(
     (resource) => resource.kind === "workflow-host",
@@ -1051,6 +1133,12 @@ function renderWorkflowComponent(
     false,
     resources,
   );
+  const entraConfigurationImport = configureEntra
+    ? 'import { configureEntraApplications } from "../shared/identity.js";\n'
+    : "";
+  const entraConfigurationBlock = configureEntra
+    ? "  await configureEntraApplications(deployment);\n"
+    : "";
   return `import {
   enableWorkflowDeployment,
   prepareAuthorizedConnection,
@@ -1060,13 +1148,13 @@ import {
   persistEnvironment,
   requiredEnv,
 } from "../../runtime/environment.js";
-import {
+${entraConfigurationImport}import {
 ${pathImports}
 } from "../../runtime/paths.js";
 
 export async function ${functionName}(deployment: Deployment): Promise<void> {
 ${connectionPreparation}${provisioning}
-  const validationValues = {
+${entraConfigurationBlock}  const validationValues = {
 ${validationEntries}
   };
   await enableWorkflowDeployment(deployment, {
@@ -1216,6 +1304,11 @@ function accessRecords(resource: ResourceRequirement): Array<{
 
 function hasOutputBinding(value: unknown): boolean {
   return /\$\{output\.[A-Za-z][A-Za-z0-9_]*\}/.test(JSON.stringify(value));
+}
+
+function exactOutputBinding(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return /^\$\{output\.([A-Za-z][A-Za-z0-9_]*)\}$/.exec(value)?.[1];
 }
 
 function workflowEnvironmentName(resourceId: string, parameter: string): string {

@@ -47,6 +47,7 @@ export const solutionName = "contoso-support";
 const stack = new Stack("main", { targetScope: "resourceGroup" });
 const location = stack.parameters.add("location", "string");
 const inputDEPLOY_REGISTRY_NAME = stack.parameters.add("inputDEPLOY_REGISTRY_NAME", "string");
+const inputBackendComputeApplicationAppId = stack.parameters.add("inputBackendComputeApplicationAppId", "string");
 const inputAppConfigurationEndpoint = stack.parameters.add("inputAppConfigurationEndpoint", "string");
 const inputDEPLOY_RESOURCE_RUNTIMECONFIGURATION_NAME = stack.parameters.add("inputDEPLOY_RESOURCE_RUNTIMECONFIGURATION_NAME", "string");
 const inputAI_RESOURCE_NAME = stack.parameters.add("inputAI_RESOURCE_NAME", "string");
@@ -133,11 +134,8 @@ new StorageContainer(feedbackStorageBlobService, {
   properties: { publicAccess: "None" },
 });
 
-const backendComputeAudience = fn.concat(
-  "api://contoso-support-backendcompute-",
-  suffix,
-);
-const backendComputeApplicationAppId = bicepRef<string>("backendComputeApplication.appId");
+const backendComputeApplicationAppId = inputBackendComputeApplicationAppId;
+const backendComputeAudience = fn.concat("api://", backendComputeApplicationAppId);
 
 const backendComputeIdentity = new UserAssignedIdentity(stack, {
   name: fn.concat("contoso-support-backendcompute-identity-", suffix),
@@ -352,6 +350,7 @@ const parameterFile = createBicepParameterFile("main.bicepparam", {
   parameters: {
     location: fn.readEnvironmentVariable("AZURE_LOCATION", "westus2"),
     inputDEPLOY_REGISTRY_NAME: fn.readEnvironmentVariable("DEPLOY_REGISTRY_NAME"),
+    inputBackendComputeApplicationAppId: fn.readEnvironmentVariable("DEPLOY_ENTRA_BACKENDCOMPUTE_APPLICATION_APP_ID"),
     inputAppConfigurationEndpoint: fn.readEnvironmentVariable("appConfigurationEndpoint"),
     inputDEPLOY_RESOURCE_RUNTIMECONFIGURATION_NAME: fn.readEnvironmentVariable("DEPLOY_RESOURCE_RUNTIMECONFIGURATION_NAME"),
     inputAI_RESOURCE_NAME: fn.readEnvironmentVariable("AI_RESOURCE_NAME"),
@@ -359,27 +358,8 @@ const parameterFile = createBicepParameterFile("main.bicepparam", {
   },
 });
 
-const rendered = renderGraphStack(stack, [
-  {
-    identifier: "backendComputeApplication",
-    type: "Microsoft.Graph/applications",
-    body: {
-      uniqueName: fn.concat("contoso-support-backendcompute-api-", suffix),
-      displayName: "contoso-support backendCompute API",
-      signInAudience: "AzureADMyOrg",
-      serviceManagementReference: "c29c71f8-2db7-4d9e-bf8b-e6b0965ecde4",
-      identifierUris: [backendComputeAudience],
-      api: { requestedAccessTokenVersion: 2 },
-    },
-  },
-  {
-    identifier: "backendComputeServicePrincipal",
-    type: "Microsoft.Graph/servicePrincipals",
-    body: { appId: backendComputeApplicationAppId },
-  },
-]);
-export const outputJson = rendered.outputJson;
-const renderedStack = rendered.main;
+export const outputJson = serialize([stack]);
+const [renderedStack] = renderBicepFiles(outputJson);
 if (renderedStack === undefined) {
   throw new Error("Generated provisioning produced no Bicep entry file.");
 }

@@ -479,6 +479,7 @@ async function deployTeamsApplication(
 export interface TeamsApplicationDeploymentOptions {
   component: string;
   componentDirectory: string;
+  existingAppId?: string;
   manifestValues: Readonly<Record<string, string>>;
   outputNames?: readonly string[];
 }
@@ -510,7 +511,10 @@ export async function provisionTeamsApplication(
     environment.TEAMS_APP_NAME ??=
       options.manifestValues.TEAMS_BOT_FULL_DISPLAY_NAME?.trim() ||
       options.component;
-    const existingAppId = process.env.TEAMS_APP_ID?.trim() || existing.TEAMS_APP_ID;
+    const existingAppId =
+      options.existingAppId?.trim() ||
+      process.env.TEAMS_APP_ID?.trim() ||
+      existing.TEAMS_APP_ID;
     if (existingAppId) environment.TEAMS_APP_ID = existingAppId;
     await mkdir(environmentDirectory, { recursive: true });
     await writeFile(environmentFile, serializeEnvironment(environment));

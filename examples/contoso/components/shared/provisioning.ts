@@ -222,6 +222,7 @@ stack.outputs.add("agentVersion", "string", "");
 stack.outputs.add("appConfigurationEndpoint", "string", runtimeConfigurationStore.properties.endpoint as any);
 stack.outputs.add("containerRegistryName", "string", deploymentRegistry.name);
 stack.outputs.add("containerRegistryEndpoint", "string", deploymentRegistry.properties.loginServer as any);
+stack.outputs.add("DEPLOY_RESOURCE_SUFFIX", "string", suffix);
 stack.outputs.add("DEPLOY_REGISTRY_NAME", "string", deploymentRegistry.name);
 stack.outputs.add("AZURE_CONTAINER_REGISTRY_ENDPOINT", "string", deploymentRegistry.properties.loginServer as any);
 stack.outputs.add("AZURE_AI_PROJECT_ID", "string", foundryProjectProject.id);

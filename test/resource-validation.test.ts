@@ -61,8 +61,8 @@ test("plans generator providers and deployment data-plane roles", () => {
         roleDefinitionId: "8311e382-0749-4cb8-b61a-304f252e45ec",
       },
       {
-        role: "Azure AI Developer",
-        roleDefinitionId: "64702f94-c441-49e6-a78b-ef80e0188fee",
+        role: "Foundry User",
+        roleDefinitionId: "53ca6127-db72-4b80-b1b0-d745d6d5456d",
       },
     ],
   );
@@ -162,7 +162,7 @@ test("validates inherited roles and grants only missing deployment access", asyn
     [
       { role: "App Configuration Data Owner", present: true, granted: false },
       { role: "AcrPush", present: true, granted: true },
-      { role: "Azure AI Developer", present: true, granted: true },
+      { role: "Foundry User", present: true, granted: true },
     ],
   );
   const createCommands = commands.filter(
@@ -172,7 +172,7 @@ test("validates inherited roles and grants only missing deployment access", asyn
     createCommands.map(({ args }) => args?.[args.indexOf("--role") + 1]),
     [
       "8311e382-0749-4cb8-b61a-304f252e45ec",
-      "64702f94-c441-49e6-a78b-ef80e0188fee",
+      "53ca6127-db72-4b80-b1b0-d745d6d5456d",
     ],
   );
   assert.equal(

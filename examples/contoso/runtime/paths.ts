@@ -31,3 +31,12 @@ export const logicAppProvisioningEntrypoint = resolve(
   deploymentRoot,
   "components/logic-app/provisioning.ts",
 );
+export const generatedIdentityProject = resolve(generatedRoot, "identity");
+export const identityBootstrapEntrypoint = resolve(
+  deploymentRoot,
+  "components/shared/identity-bootstrap.ts",
+);
+export const identityConfigurationEntrypoint = resolve(
+  deploymentRoot,
+  "components/shared/identity-configuration.ts",
+);
