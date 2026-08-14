@@ -119,7 +119,7 @@ export async function generateDeploymentCode(
         dependencies: {
           "imperative-deploy": `file:${localPackagePath}`,
           ...(requirements.resources.length > 0
-            ? provisioningDependencies()
+            ? provisioningDependencies(outputDirectory, repositoryRoot)
             : {}),
         },
         devDependencies: { "@types/node": "^24.0.0", typescript: "^6.0.0" },
@@ -319,12 +319,14 @@ function validateContracts(
   }
 
   const resourceIds = new Set<string>();
+  const resourcesById = new Map<string, ResourceRequirement>();
   const outputs = new Map<string, string>();
   for (const resource of requirements.resources) {
     if (resourceIds.has(resource.id)) {
       throw new Error(`Duplicate resource id '${resource.id}'.`);
     }
     resourceIds.add(resource.id);
+    resourcesById.set(resource.id, resource);
     if (resource.requiredBy.length === 0) {
       throw new Error(`Resource '${resource.id}' must name at least one requiredBy component.`);
     }
@@ -343,6 +345,40 @@ function validateContracts(
         );
       }
       outputs.set(output, resource.id);
+    }
+  }
+  for (const target of requirements.resources) {
+    const sourceIds = privateEndpointSourceResourceIds(target);
+    if (sourceIds.length === 0) continue;
+    if (target.kind !== "container-host") {
+      throw new Error(
+        `Resource '${target.id}' configures private endpoint sources but is not a container-host.`,
+      );
+    }
+    const uniqueSourceIds = new Set<string>();
+    for (const sourceId of sourceIds) {
+      if (uniqueSourceIds.has(sourceId)) {
+        throw new Error(
+          `Resource '${target.id}' contains duplicate private endpoint source '${sourceId}'.`,
+        );
+      }
+      uniqueSourceIds.add(sourceId);
+      const source = resourcesById.get(sourceId);
+      if (!source) {
+        throw new Error(
+          `Resource '${target.id}' references unknown private endpoint source '${sourceId}'.`,
+        );
+      }
+      if (source === target) {
+        throw new Error(
+          `Resource '${target.id}' cannot use itself as a private endpoint source.`,
+        );
+      }
+      if (source.kind !== "container-host") {
+        throw new Error(
+          `Private endpoint source '${sourceId}' for '${target.id}' is not a container-host.`,
+        );
+      }
     }
   }
   for (const binding of collectOutputBindings(requirements.resources)) {
@@ -404,6 +440,21 @@ function orderComponents(
       }
     }
   }
+  const resourcesById = new Map(
+    requirements.resources.map((resource) => [resource.id, resource]),
+  );
+  for (const target of requirements.resources) {
+    for (const sourceId of privateEndpointSourceResourceIds(target)) {
+      const source = resourcesById.get(sourceId)!;
+      for (const sourceComponent of source.requiredBy) {
+        for (const targetComponent of target.requiredBy) {
+          if (sourceComponent !== targetComponent) {
+            dependencies.get(sourceComponent)!.add(targetComponent);
+          }
+        }
+      }
+    }
+  }
 
   const ordered: string[] = [];
   const remaining = new Set(components);
@@ -456,6 +507,21 @@ function collectComponentBindings(resource: ResourceRequirement): Set<string> {
     return collectOutputBindings(resource.parameters);
   }
   return new Set();
+}
+
+function privateEndpointSourceResourceIds(
+  resource: ResourceRequirement,
+): readonly string[] {
+  const ingress = asRecord(asRecord(resource.configuration).ingress);
+  const privateEndpoint = asRecord(ingress.privateEndpoint);
+  const sourceResources =
+    privateEndpoint.sourceResources ?? ingress.allowedSourceResources;
+  return sourceResources === undefined
+    ? []
+    : stringArray(
+        sourceResources,
+        `${resource.id}.configuration.ingress.privateEndpoint.sourceResources`,
+      );
 }
 
 function collectOutputBindings(value: unknown): Set<string> {
@@ -775,21 +841,36 @@ function renderContainerComponent(
           ingress.allowedServiceTags,
           `${resource.id}.configuration.ingress.allowedServiceTags`,
         );
-  const peerIngressTargets = allResources.filter((candidate) => {
+  const privateEndpointTargets = allResources.flatMap((candidate) => {
     if (candidate.kind !== "container-host" || candidate.id === resource.id) {
-      return false;
+      return [];
     }
     const candidateIngress = asRecord(
       asRecord(candidate.configuration).ingress,
     );
-    const allowedSourceResources =
-      candidateIngress.allowedSourceResources === undefined
+    const privateEndpoint = asRecord(candidateIngress.privateEndpoint);
+    const sourceResourcesValue =
+      privateEndpoint.sourceResources ?? candidateIngress.allowedSourceResources;
+    const sourceResources =
+      sourceResourcesValue === undefined
         ? []
         : stringArray(
-            candidateIngress.allowedSourceResources,
-            `${candidate.id}.configuration.ingress.allowedSourceResources`,
+            sourceResourcesValue,
+            `${candidate.id}.configuration.ingress.privateEndpoint.sourceResources`,
           );
-    return allowedSourceResources.includes(resource.id);
+    if (!sourceResources.includes(resource.id)) return [];
+    const publicServiceTags =
+      candidateIngress.allowedServiceTags === undefined
+        ? []
+        : stringArray(
+            candidateIngress.allowedServiceTags,
+            `${candidate.id}.configuration.ingress.allowedServiceTags`,
+          );
+    return [{
+      resource: candidate,
+      publicNetworkAccess:
+        publicServiceTags.length === 0 ? "Disabled" : "Enabled",
+    }] as const;
   });
   const environmentEntries = Object.entries(runtimeSettings)
     .map(
@@ -813,8 +894,8 @@ function renderContainerComponent(
     : "";
   const ingressImports = [
     ...(ingressDefaultAction ? ["  ensureAppServiceIngress,"] : []),
-    ...(peerIngressTargets.length > 0
-      ? ["  ensureAppServicePeerIngress,"]
+    ...(privateEndpointTargets.length > 0
+      ? ["  ensureAppServicePrivateEndpoint,"]
       : []),
   ];
   const ingressImport =
@@ -838,15 +919,18 @@ function renderContainerComponent(
   });
 `
       : "";
-  const peerIngressBlock = peerIngressTargets
+  const privateEndpointBlock = privateEndpointTargets
     .map(
-      (target) => `  await deployment.deploy(${JSON.stringify(`configure ${resource.id} access to ${target.id}`)}, async () => {
-    await ensureAppServicePeerIngress(deployment, {
+      ({ resource: target, publicNetworkAccess }) => `  await deployment.deploy(${JSON.stringify(`configure ${resource.id} private access to ${target.id}`)}, async () => {
+    await ensureAppServicePrivateEndpoint(deployment, {
       resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
+      location: requiredEnv("AZURE_LOCATION"),
       sourceSiteName: requiredEnv(${JSON.stringify(implementationOutputName(resource.id, "NAME"))}),
       targetSiteName: requiredEnv(${JSON.stringify(implementationOutputName(target.id, "NAME"))}),
       sourceResourceName: ${JSON.stringify(resource.id)},
+      targetResourceName: ${JSON.stringify(target.id)},
       subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
+      publicNetworkAccess: ${JSON.stringify(publicNetworkAccess)},
     });
   });
 `,
@@ -879,7 +963,7 @@ ${pathImports}
 export async function ${functionName}(deployment: Deployment): Promise<void> {
   const outputs: Record<string, string> = {};
 ${provisioning}
-${entraConfigurationBlock}${serviceTagIngressBlock}${peerIngressBlock}  const service = {
+${entraConfigurationBlock}${serviceTagIngressBlock}${privateEndpointBlock}  const service = {
     directory: ${generatedProject},
     service: ${JSON.stringify(component)},
     ...(deployment.dryRun
@@ -1031,14 +1115,24 @@ function renderTeamsApplicationBlock(
   resource: ResourceRequirement,
   source: string | undefined,
 ): string {
-  const values = asRecord(asRecord(resource.configuration).manifestValues);
-  const existingAppId = asRecord(resource.configuration).existingAppId;
+  const configuration = asRecord(resource.configuration);
+  const values = asRecord(configuration.manifestValues);
+  const existingAppId = configuration.existingAppId;
+  const teamId = configuration.teamId;
   if (
     existingAppId !== undefined &&
     (typeof existingAppId !== "string" || !existingAppId.trim())
   ) {
     throw new Error(
       `${resource.id}.configuration.existingAppId must be a non-empty string.`,
+    );
+  }
+  if (
+    teamId !== undefined &&
+    (typeof teamId !== "string" || !teamId.trim())
+  ) {
+    throw new Error(
+      `${resource.id}.configuration.teamId must be a non-empty string.`,
     );
   }
   const entries = Object.entries(values)
@@ -1053,7 +1147,7 @@ function renderTeamsApplicationBlock(
     await provisionTeamsApplication(deployment, {
       component: ${JSON.stringify(component)},
       componentDirectory: resolve(packageRoot, ${JSON.stringify(source ?? ".")}),
-${existingAppId ? `      existingAppId: ${JSON.stringify(existingAppId)},\n` : ""}      manifestValues: {
+${existingAppId ? `      existingAppId: ${JSON.stringify(existingAppId)},\n` : ""}${teamId ? `      teamId: ${JSON.stringify(teamId)},\n` : ""}      manifestValues: {
 ${entries}
       },
       outputNames: ${JSON.stringify(resource.produces ?? [])},

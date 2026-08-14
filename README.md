@@ -240,6 +240,10 @@ Install them with:
 npm ci --prefix examples/chatbot
 ```
 
+Generated deployment packages use those same release assets bundled under this
+package's `vendor/` directory, so deployment workers do not require GitHub
+credentials when installing generated dependencies.
+
 The chatbot consumes this tool through the relative
 `imperative-deploy: file:../..` package dependency and imports only the package
 export, never the root `src` directory.

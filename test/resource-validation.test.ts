@@ -87,6 +87,43 @@ test("rejects providers that the resource-kind generator cannot emit", () => {
   );
 });
 
+test("plans Microsoft.Network for App Service private endpoint relationships", () => {
+  const plan = planResourceValidation({
+    schemaVersion: "1.0",
+    solution: {
+      name: "support",
+      enabledComponents: ["backend", "frontend"],
+    },
+    resources: [
+      {
+        id: "backendCompute",
+        kind: "container-host",
+        requiredBy: ["backend"],
+        configuration: {
+          ingress: {
+            mode: "restricted",
+            privateEndpoint: {
+              sourceResources: ["frontendCompute"],
+            },
+          },
+        },
+        azureResourceTypes: [
+          "Microsoft.Network/virtualNetworks",
+          "Microsoft.Network/privateEndpoints",
+          "Microsoft.Network/privateDnsZones",
+        ],
+      },
+      {
+        id: "frontendCompute",
+        kind: "container-host",
+        requiredBy: ["frontend"],
+      },
+    ],
+  });
+
+  assert.ok(plan.providers.includes("Microsoft.Network"));
+});
+
 test("validates inherited roles and grants only missing deployment access", async () => {
   const commands: Command[] = [];
   class ValidationDeployment extends Deployment {

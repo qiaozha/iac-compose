@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 import {
   captureAzure,
+  captureAzureJson,
   deployAppServiceContainer,
   ensureRoleAssignment,
   prepareAppServiceContainer,
@@ -455,10 +456,19 @@ async function deployTeamsApplication(
       `Teams application '${resource.id}' requires a component source directory.`,
     );
   }
-  const manifestValues = asObject(asObject(resource.configuration).manifestValues);
+  const configuration = asObject(resource.configuration);
+  const manifestValues = asObject(configuration.manifestValues);
+  const teamId = configuration.teamId;
   return provisionTeamsApplication(deployment, {
     component: options.component,
     componentDirectory: resolve(options.packageDirectory, source),
+    ...(teamId === undefined
+      ? {}
+      : {
+          teamId: resolveOutputBindings(
+            requiredString(teamId, `${resource.id}.configuration.teamId`),
+          ),
+        }),
     manifestValues: Object.fromEntries(
       Object.entries(manifestValues)
         .filter(([name]) => name !== "TEAMS_APP_ID")
@@ -480,6 +490,7 @@ export interface TeamsApplicationDeploymentOptions {
   component: string;
   componentDirectory: string;
   existingAppId?: string;
+  teamId?: string;
   manifestValues: Readonly<Record<string, string>>;
   outputNames?: readonly string[];
 }
@@ -489,6 +500,12 @@ export async function provisionTeamsApplication(
   options: TeamsApplicationDeploymentOptions,
 ): Promise<Record<string, string>> {
   const values: Record<string, string> = {};
+  const teamId = options.teamId?.trim();
+  if (options.teamId !== undefined && !teamId) {
+    throw new Error(
+      `Teams application '${options.component}' teamId must be a non-empty string.`,
+    );
+  }
   await deployment.deploy(`${options.component} Teams application`, async () => {
     const componentDirectory = resolve(options.componentDirectory);
     await readFile(resolve(componentDirectory, "teamsapp.yml"), "utf8");
@@ -544,10 +561,115 @@ export async function provisionTeamsApplication(
         `Teams application '${options.component}' did not produce TEAMS_APP_ID.`,
       );
     }
+    if (teamId) {
+      await ensureTeamsApplicationInstalled(deployment, {
+        componentDirectory,
+        teamId,
+        teamsAppId,
+        teamsEnvironment,
+      });
+    }
     values.TEAMS_APP_ID = teamsAppId;
     for (const output of options.outputNames ?? []) values[output] = teamsAppId;
   });
   return values;
+}
+
+interface TeamsApplicationInstallationOptions {
+  componentDirectory: string;
+  teamId: string;
+  teamsAppId: string;
+  teamsEnvironment: string;
+}
+
+interface InstalledTeamsApplicationsResponse {
+  value?: Array<{ teamsApp?: { externalId?: string } }>;
+}
+
+async function ensureTeamsApplicationInstalled(
+  deployment: Deployment,
+  options: TeamsApplicationInstallationOptions,
+): Promise<void> {
+  const installedAppsUrl =
+    `https://graph.microsoft.com/v1.0/teams/${encodeURIComponent(options.teamId)}/installedApps`;
+  const response = await captureAzureJson<InstalledTeamsApplicationsResponse>(
+    deployment,
+    [
+      "rest",
+      "--method",
+      "get",
+      "--url",
+      `${installedAppsUrl}?$expand=teamsApp`,
+    ],
+  );
+  const installed = Array.isArray(response?.value) &&
+    response.value.some(
+      (installation) =>
+        installation.teamsApp?.externalId === options.teamsAppId,
+    );
+  if (installed) {
+    return;
+  }
+
+  const packagePath = resolve(
+    options.componentDirectory,
+    "appPackage",
+    "build",
+    `appPackage.${options.teamsEnvironment}.zip`,
+  );
+  await readFile(packagePath);
+  const output = await deployment.capture({
+    command: "npx",
+    args: [
+      "--yes",
+      "@microsoft/teamsapp-cli",
+      "install",
+      "--file-path",
+      packagePath,
+      "--scope",
+      "Shared",
+      "--interactive",
+      "false",
+    ],
+    cwd: options.componentDirectory,
+    env: {
+      CI: "",
+      TF_BUILD: "",
+      TEAMSFX_INTERACTIVE: "true",
+    },
+  });
+  const catalogAppId = parseTeamsCatalogAppId(output);
+  await deployment.execute({
+    command: "az",
+    args: [
+      "rest",
+      "--method",
+      "post",
+      "--url",
+      installedAppsUrl,
+      "--headers",
+      "Content-Type=application/json",
+      "--body",
+      JSON.stringify({
+        "teamsApp@odata.bind":
+          `https://graph.microsoft.com/v1.0/appCatalogs/teamsApps/${catalogAppId}`,
+      }),
+      "--output",
+      "none",
+    ],
+  });
+}
+
+function parseTeamsCatalogAppId(output: string): string {
+  const match =
+    /^AppId:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\s*$/im
+      .exec(output);
+  if (!match?.[1]) {
+    throw new Error(
+      "Teams application installation did not produce an AppId.",
+    );
+  }
+  return match[1];
 }
 
 async function enableWorkflow(

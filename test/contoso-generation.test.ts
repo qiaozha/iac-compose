@@ -191,7 +191,8 @@ test("Contoso components provision their owned resources", async () => {
     frontendLifecycle,
     /serviceTags: \["LogicApps","AzureBotService"\]/,
   );
-  assert.match(frontendLifecycle, /ensureAppServicePeerIngress/);
+  assert.match(frontendLifecycle, /ensureAppServicePrivateEndpoint/);
+  assert.doesNotMatch(frontendLifecycle, /ensureAppServicePeerIngress/);
   assert.match(
     frontendLifecycle,
     /sourceSiteName: requiredEnv\("DEPLOY_RESOURCE_FRONTENDCOMPUTE_NAME"\)/,
@@ -200,6 +201,8 @@ test("Contoso components provision their owned resources", async () => {
     frontendLifecycle,
     /targetSiteName: requiredEnv\("DEPLOY_RESOURCE_BACKENDCOMPUTE_NAME"\)/,
   );
+  assert.match(frontendLifecycle, /targetResourceName: "backendCompute"/);
+  assert.match(frontendLifecycle, /publicNetworkAccess: "Enabled"/);
   assert.match(
     frontendLifecycle,
     /componentDirectory: resolve\(packageRoot, "components\/frontend"\)/,
