@@ -1307,7 +1307,7 @@ ${typeof resource.healthPath === "string" ? `      excludedPaths: [${JSON.string
       const base = identifier(resource.id);
       const frontend = this.#outputs.get("frontendBaseUrl") ?? JSON.stringify("");
       this.#sections.push(`const ${base}Bot = new Bot(stack, {
-  name: fn.concat(${JSON.stringify(hyphenatedPrefix(this.#solutionName(), `${resource.id}-bot`, 56))}, suffix),
+  name: fn.concat(${JSON.stringify(hyphenatedPrefix(this.#solutionName(), `${resource.id}-bot`, 35))}, suffix),
   location: "global",
   kind: "azurebot",
   sku: { name: "F0" },
@@ -2335,10 +2335,13 @@ function entraCallerPrincipalOutputs(
   const targetOutputs = new Set(target.produces ?? []);
   const ingress = asObject(asObject(target.configuration).ingress);
   const privateEndpoint = asObject(ingress.privateEndpoint);
-  const allowedSources = arrayValue(
-    privateEndpoint.sourceResources ?? ingress.allowedSourceResources,
-  )
-    .filter((value): value is string => typeof value === "string");
+  const authentication = asObject(asObject(target.configuration).authentication);
+  const allowedSources = new Set([
+    ...arrayValue(authentication.callerResources),
+    ...arrayValue(
+      privateEndpoint.sourceResources ?? ingress.allowedSourceResources,
+    ),
+  ].filter((value): value is string => typeof value === "string"));
   for (const sourceId of allowedSources) {
     const source = resources.find((resource) => resource.id === sourceId);
     if (!source) continue;

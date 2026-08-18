@@ -151,6 +151,14 @@ export interface AppServiceContainerOptions {
   tag?: string;
   remoteBuild?: boolean;
   environment?: Readonly<Record<string, string>>;
+  resourceGroup?: string;
+  subscription?: string;
+}
+
+export interface AppServiceContainerPullIdentityOptions {
+  resourceGroup: string;
+  siteName: string;
+  subscription?: string;
 }
 
 export interface AppServiceIngressOptions {
@@ -235,7 +243,7 @@ export async function waitForAppServiceReady(
       }
     },
     {
-      attempts: options.attempts ?? 20,
+      attempts: options.attempts ?? 40,
       delayMs: options.delayMs ?? 15_000,
     },
   );
@@ -865,10 +873,124 @@ export async function deployAppServiceContainer(
   options: AppServiceContainerOptions,
 ): Promise<Record<string, string>> {
   const project = await prepareAppServiceContainer(deployment, options);
-  return project.deploy(
+  const outputs = await project.deploy(
     options.service,
     options.image ? { fromPackage: options.image } : {},
   );
+  if (options.resourceName && options.resourceGroup) {
+    await ensureAppServiceContainerPullIdentity(deployment, {
+      resourceGroup: options.resourceGroup,
+      siteName: options.resourceName,
+      subscription: options.subscription,
+    });
+  }
+  return outputs;
+}
+
+export async function ensureAppServiceContainerPullIdentity(
+  deployment: Deployment,
+  options: AppServiceContainerPullIdentityOptions,
+): Promise<void> {
+  const subscriptionArgs = options.subscription
+    ? ["--subscription", options.subscription]
+    : [];
+  const identity = await captureAzureJson<{
+    userAssignedIdentities?: Record<string, { clientId?: string }>;
+  }>(deployment, [
+    "webapp",
+    "identity",
+    "show",
+    ...subscriptionArgs,
+    "--resource-group",
+    options.resourceGroup,
+    "--name",
+    options.siteName,
+  ]);
+  const clientIds = Object.values(identity.userAssignedIdentities ?? {})
+    .map(({ clientId }) => clientId?.trim())
+    .filter((clientId): clientId is string => Boolean(clientId));
+  if (clientIds.length === 0) return;
+
+  const configuredClientId = (
+    await captureAzure(
+      deployment,
+      options.subscription
+        ? [
+            "rest",
+            "--method",
+            "get",
+            "--uri",
+            `https://management.azure.com/subscriptions/${encodeURIComponent(options.subscription)}` +
+              `/resourceGroups/${encodeURIComponent(options.resourceGroup)}` +
+              `/providers/Microsoft.Web/sites/${encodeURIComponent(options.siteName)}` +
+              "/config/web?api-version=2024-11-01",
+            "--query",
+            "properties.acrUserManagedIdentityID",
+            "--output",
+            "tsv",
+          ]
+        : [
+            "webapp",
+            "config",
+            "show",
+            ...subscriptionArgs,
+            "--resource-group",
+            options.resourceGroup,
+            "--name",
+            options.siteName,
+            "--query",
+            "acrUserManagedIdentityID",
+            "--output",
+            "tsv",
+          ],
+    )
+  ).trim();
+  if (clientIds.includes(configuredClientId)) return;
+
+  let clientId = clientIds[0]!;
+  if (clientIds.length > 1) {
+    const applicationClientId = (
+      await captureAzure(deployment, [
+        "webapp",
+        "config",
+        "appsettings",
+        "list",
+        ...subscriptionArgs,
+        "--resource-group",
+        options.resourceGroup,
+        "--name",
+        options.siteName,
+        "--query",
+        "[?name=='AZURE_CLIENT_ID'].value | [0]",
+        "--output",
+        "tsv",
+      ])
+    ).trim();
+    if (!clientIds.includes(applicationClientId)) {
+      throw new Error(
+        `App Service '${options.siteName}' has multiple user-assigned identities and no matching AZURE_CLIENT_ID setting.`,
+      );
+    }
+    clientId = applicationClientId;
+  }
+
+  await runAzure(deployment, [
+    "webapp",
+    "config",
+    "set",
+    ...subscriptionArgs,
+    "--resource-group",
+    options.resourceGroup,
+    "--name",
+    options.siteName,
+    "--generic-configurations",
+    JSON.stringify({
+      acrUseManagedIdentityCreds: true,
+      acrUserManagedIdentityID: clientId,
+    }),
+    "--output",
+    "none",
+  ]);
 }
 
 export async function prepareAppServiceContainer(

@@ -178,6 +178,26 @@ tree: `deploy-js run` resolves its `imperative-deploy` imports to the running
 CLI package. Directly importing or compiling generated source still requires an
 `imperative-deploy` dependency in the customer package.
 
+Programmatic callers can observe generation phase boundaries without parsing
+CLI text:
+
+```ts
+await generateDeploymentCode({
+  resourcesFile,
+  solutionFile,
+  outputDirectory,
+  onProgress: ({ stage, percent, message, componentCount, fileCount }) => {
+    logger.info(message, { stage, percent, componentCount, fileCount });
+  },
+});
+```
+
+Generation reports `loadingInputs`, `validatingContracts`,
+`planningComponents`, `renderingSources`, `writingFiles`, and `completed` in
+order. The CLI renders the same events as `[deploy-js] GENERATE` lines. The
+callback may be asynchronous; if it rejects, generation stops and propagates
+the error to the caller.
+
 Install the generated package's provisioning SDK dependencies before typechecking
 it directly:
 
