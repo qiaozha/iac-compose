@@ -34,6 +34,12 @@ test("generates chatbot-style deployment code in dependency order", async () => 
       },
       resources: [
         {
+          id: "monitoring",
+          kind: "application-monitoring",
+          requiredBy: ["backend", "frontend"],
+          produces: ["applicationInsightsConnectionString"],
+        },
+        {
           id: "frontendCompute",
           kind: "container-host",
           requiredBy: ["frontend"],
@@ -43,6 +49,8 @@ test("generates chatbot-style deployment code in dependency order", async () => 
             ingress: { allowedServiceTags: ["AzureBotService"] },
             runtimeSettings: {
               BACKEND_BASE_URL: "${output.backendBaseUrl}",
+              APPLICATIONINSIGHTS_CONNECTION_STRING:
+                "${output.applicationInsightsConnectionString}",
             },
           },
           produces: ["frontendBaseUrl"],
@@ -53,7 +61,12 @@ test("generates chatbot-style deployment code in dependency order", async () => 
           requiredBy: ["backend"],
           source: "components/backend",
           containerPort: 8080,
-          configuration: { ingress: { mode: "unrestricted" } },
+          configuration: {
+            runtimeSettings: {
+              APPLICATIONINSIGHTS_CONNECTION_STRING:
+                "${output.applicationInsightsConnectionString}",
+            },
+          },
           produces: ["backendBaseUrl"],
         },
       ],
@@ -72,6 +85,7 @@ test("generates chatbot-style deployment code in dependency order", async () => 
       resources: {
         contract: "config/generated/resource-requirements.json",
         planned: [
+          { id: "monitoring", kind: "application-monitoring" },
           { id: "frontendCompute", kind: "container-host" },
           { id: "backendCompute", kind: "container-host" },
         ],
@@ -123,8 +137,12 @@ test("generates chatbot-style deployment code in dependency order", async () => 
     "utf8",
   );
   assert.match(provisioning, /new Stack\(/);
+  assert.match(provisioning, /new Workspace\(/);
+  assert.match(provisioning, /new ApplicationInsightsComponent\(/);
+  assert.match(provisioning, /applicationInsightsConnectionString/);
   assert.doesNotMatch(provisioning, /new Site\(/);
   assert.match(backendProvisioning, /new Site\(/);
+  assert.match(backendProvisioning, /publicNetworkAccess: "Enabled"/);
   assert.match(provisioning, /renderBicepFiles/);
   assert.doesNotMatch(provisioning, /renderResourceRequirements/);
   assert.doesNotMatch(provisioning, /"schemaVersion"|"requiredBy"|"produces"/);
@@ -143,6 +161,11 @@ test("generates chatbot-style deployment code in dependency order", async () => 
   assert.match(frontend, /deployAppServiceContainer/);
   assert.match(frontend, /defaultAction: "Deny"/);
   assert.doesNotMatch(frontend, /const resources\s*=|"requiredBy"|"produces"/);
+  assert.match(backend, /APPLICATIONINSIGHTS_CONNECTION_STRING/);
+  assert.match(
+    backend,
+    /deploymentValue\(deployment, "applicationInsightsConnectionString"\)/,
+  );
   assert.match(backend, /defaultAction: "Allow"/);
 });
 
@@ -363,6 +386,10 @@ test("authorizes peer identities and generates private App Service networking", 
     join(outputDirectory, "components/frontend/index.ts"),
     "utf8",
   );
+  const backendProvisioning = await readFile(
+    join(outputDirectory, "components/backend/provisioning.ts"),
+    "utf8",
+  );
   const identityConfiguration = await readFile(
     join(outputDirectory, "components/shared/identity-configuration.ts"),
     "utf8",
@@ -374,6 +401,7 @@ test("authorizes peer identities and generates private App Service networking", 
   assert.match(frontend, /subscription: requiredEnv\("AZURE_SUBSCRIPTION_ID"\)/);
   assert.match(frontend, /targetResourceName: "backendCompute"/);
   assert.match(frontend, /publicNetworkAccess: "Disabled"/);
+  assert.doesNotMatch(backendProvisioning, /publicNetworkAccess: "Enabled"/);
   assert.match(frontend, /configureEntraApplications/);
   assert.doesNotMatch(frontend, /ensureAppServicePeerAuthentication/);
   assert.match(identityConfiguration, /Microsoft\.Graph\/appRoleAssignedTo/);

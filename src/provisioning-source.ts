@@ -1181,7 +1181,13 @@ const ${base}Insights = new ApplicationInsightsComponent(stack, {
     for (const resource of this.#ofKind("container-host")) {
       if (this.#isHosted(resource)) continue;
       const base = identifier(resource.id);
-      const runtimeSettings = asObject(asObject(resource.configuration).runtimeSettings);
+      const configuration = asObject(resource.configuration);
+      const runtimeSettings = asObject(configuration.runtimeSettings);
+      const ingress = asObject(configuration.ingress);
+      const publicNetworkAccessEnabled =
+        Object.keys(ingress).length === 0 ||
+        ingress.mode === "unrestricted" ||
+        arrayValue(ingress.allowedServiceTags).length > 0;
       const entraAuthentication = microsoftEntraAuthentication(resource);
       const botIdentity = this.#ofKind("bot-identity")[0];
       const attachedIdentity =
@@ -1235,7 +1241,7 @@ const ${base}Site = new Site(stack, {
   properties: {
     serverFarmId: ${base}Plan.id as any,
     httpsOnly: true,
-    siteConfig: {
+    ${publicNetworkAccessEnabled ? 'publicNetworkAccess: "Enabled",\n    ' : ""}siteConfig: {
       linuxFxVersion: "DOCKER|mcr.microsoft.com/azuredocs/aci-helloworld:latest",
       alwaysOn: true,
       acrUseManagedIdentityCreds: true,
