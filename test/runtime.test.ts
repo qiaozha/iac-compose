@@ -7,6 +7,7 @@ import { test } from "node:test";
 import {
   createDeployment,
   Deployment,
+  ensureAppServiceContainerPullIdentity,
   ensureAppServiceIngress,
   ensureAppServicePrivateEndpoint,
   ensureAppServicePeerIngress,
@@ -137,6 +138,56 @@ test("App Service readiness waits for a ready site instance", async () => {
   ]);
 });
 
+test("restores a missing user-assigned App Service container pull identity", async () => {
+  const commands: Command[] = [];
+  class ContainerIdentityDeployment extends Deployment {
+    override async capture(command: Command): Promise<string> {
+      commands.push(command);
+      if (command.args?.[1] === "identity") {
+        return JSON.stringify({
+          userAssignedIdentities: {
+            "/identities/backend": { clientId: "backend-client-id" },
+          },
+        });
+      }
+      return "";
+    }
+
+    override async execute(command: Command): Promise<void> {
+      commands.push(command);
+    }
+  }
+
+  await ensureAppServiceContainerPullIdentity(
+    new ContainerIdentityDeployment(),
+    {
+      resourceGroup: "resources",
+      siteName: "backend",
+      subscription: "subscription",
+    },
+  );
+
+  assert.equal(commands.length, 3);
+  assert.deepEqual(commands[2]?.args, [
+    "webapp",
+    "config",
+    "set",
+    "--subscription",
+    "subscription",
+    "--resource-group",
+    "resources",
+    "--name",
+    "backend",
+    "--generic-configurations",
+    JSON.stringify({
+      acrUseManagedIdentityCreds: true,
+      acrUserManagedIdentityID: "backend-client-id",
+    }),
+    "--output",
+    "none",
+  ]);
+});
+
 test("App Service ingress preserves existing rules and adds only missing tags", async () => {
   const commands: Command[] = [];
   class IngressDeployment extends Deployment {
@@ -215,6 +266,53 @@ test("App Service ingress enforces the unmatched traffic action", async () => {
   assert.deepEqual(commands[2]?.args?.slice(-4), [
     "--default-action",
     "Deny",
+    "--output",
+    "none",
+  ]);
+});
+
+test("App Service public ingress removes a stale catch-all deny rule", async () => {
+  const commands: Command[] = [];
+  class PublicIngressDeployment extends Deployment {
+    override async capture(command: Command): Promise<string> {
+      commands.push(command);
+      return command.args?.includes("ipSecurityRestrictionsDefaultAction")
+        ? "Deny\n"
+        : JSON.stringify([
+            {
+              action: "Deny",
+              ipAddress: "Any",
+              name: "Deny all",
+              priority: 2147483647,
+            },
+          ]);
+    }
+
+    override async execute(command: Command): Promise<void> {
+      commands.push(command);
+    }
+  }
+
+  const added = await ensureAppServiceIngress(new PublicIngressDeployment(), {
+    resourceGroup: "resources",
+    siteName: "backend",
+    serviceTags: [],
+    defaultAction: "Allow",
+    subscription: "subscription",
+  });
+
+  assert.deepEqual(added, []);
+  assert.deepEqual(commands[1]?.args?.slice(-6), [
+    "--rule-name",
+    "Deny all",
+    "--action",
+    "Deny",
+    "--output",
+    "none",
+  ]);
+  assert.deepEqual(commands[3]?.args?.slice(-4), [
+    "--default-action",
+    "Allow",
     "--output",
     "none",
   ]);
@@ -508,9 +606,14 @@ test("Teams provisioning installs the generated app in its target team", async (
     override async execute(command: Command): Promise<void> {
       commands.push(command);
       if (command.command === "npx" && command.args?.includes("provision")) {
+        const environmentFile = join(
+          source,
+          "env",
+          ".env.deploy-js-dev",
+        );
         await writeFile(
-          join(source, "env", ".env.deploy-js-dev"),
-          `TEAMS_APP_ID=${manifestId}\n`,
+          environmentFile,
+          `${await readFile(environmentFile, "utf8")}TEAMS_APP_ID=${manifestId}\n`,
         );
       }
     }
@@ -541,21 +644,44 @@ test("Teams provisioning installs the generated app in its target team", async (
   assert.ok(graphInstall.args?.includes(
     `https://graph.microsoft.com/v1.0/teams/${teamId}/installedApps`,
   ));
+  const environment = await readFile(
+    join(source, "env", ".env.deploy-js-dev"),
+    "utf8",
+  );
+  const version = /^TEAMS_APP_VERSION=(\d+)\.(\d+)\.(\d+)$/m.exec(environment);
+  assert.ok(version);
+  assert.ok(version.slice(1).every((part) => Number(part) <= 65_535));
 });
 
-test("Teams provisioning skips an app already installed in its target team", async () => {
+test("Teams provisioning reinstalls an app already installed in its target team", async () => {
   const root = await mkdtemp(join(tmpdir(), "deploy-js-teams-existing-"));
   const source = join(root, "source");
   await mkdir(join(source, "env"), { recursive: true });
+  await mkdir(join(source, "appPackage", "build"), { recursive: true });
   await writeFile(join(source, "teamsapp.yml"), "version: v1.7\n");
+  await writeFile(
+    join(
+      source,
+      "appPackage",
+      "build",
+      "appPackage.deploy-js-dev.zip",
+    ),
+    "package",
+  );
   const manifestId = "9668bcb5-a50b-4e39-a136-b3301305de66";
+  const catalogAppId = "0b823f54-1292-463d-a9a3-a1befc6b5e9a";
+  const installationId = "installed-app-id";
+  const teamId = "af71663c-8492-4c4a-9ac4-a3dbaa71fa7b";
   const commands: Command[] = [];
 
   class ExistingTeamsDeployment extends Deployment {
     override async capture(command: Command): Promise<string> {
       commands.push(command);
+      if (command.command === "npx") {
+        return `TitleId: title-id\nAppId: ${catalogAppId}\n`;
+      }
       return JSON.stringify({
-        value: [{ teamsApp: { externalId: manifestId } }],
+        value: [{ id: installationId, teamsApp: { externalId: manifestId } }],
       });
     }
 
@@ -576,7 +702,7 @@ test("Teams provisioning skips an app already installed in its target team", asy
       component: "frontend",
       componentDirectory: source,
       existingAppId: manifestId,
-      teamId: "af71663c-8492-4c4a-9ac4-a3dbaa71fa7b",
+      teamId,
       manifestValues: { TEAMS_APP_NAME: "Test app" },
     },
   );
@@ -586,12 +712,39 @@ test("Teams provisioning skips an app already installed in its target team", asy
       (command) =>
         command.command === "npx" && command.args?.includes("install"),
     ).length,
-    0,
+    1,
   );
+  const entitlementResetIndex = commands.findIndex(
+    (command) =>
+      command.command === "npx" && command.args?.includes("uninstall"),
+  );
+  const packageInstallIndex = commands.findIndex(
+    (command) =>
+      command.command === "npx" && command.args?.includes("install"),
+  );
+  const teamDeleteIndex = commands.findIndex(
+    (command) =>
+      command.command === "az" && command.args?.includes("delete"),
+  );
+  assert.notEqual(entitlementResetIndex, -1);
+  assert.ok(entitlementResetIndex < packageInstallIndex);
+  assert.ok(packageInstallIndex < teamDeleteIndex);
   assert.equal(
     commands.filter(
       (command) => command.command === "az" && command.args?.includes("post"),
     ).length,
-    0,
+    1,
+  );
+  assert.ok(
+    commands.some((command) =>
+      command.args?.includes(
+        `https://graph.microsoft.com/v1.0/teams/${teamId}/installedApps/${installationId}`,
+      )
+    ),
+  );
+  assert.ok(
+    commands.some((command) =>
+      command.command === "az" && command.args?.includes("delete")
+    ),
   );
 });

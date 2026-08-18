@@ -212,6 +212,30 @@ test("renders resource requirements and resolves output bindings", () => {
   assert.match(parameters, /DEPLOY_CREATE_RESOURCE_TEAMSCONNECTION/);
 });
 
+test("limits rendered Azure Bot names to 42 characters", () => {
+  const files = renderResourceRequirements({
+    schemaVersion: "1.0",
+    solution: {
+      name: "azure-sdk-engineering-assistant",
+      enabledComponents: ["frontend"],
+    },
+    resources: [
+      {
+        id: "botIdentity",
+        kind: "bot-identity",
+        requiredBy: ["frontend"],
+        produces: ["botClientId", "botIdentityResourceId", "tenantId"],
+      },
+    ],
+  });
+  const bicep = files.find((file) => file.path === "main.bicep")?.contents ?? "";
+  const match = bicep.match(
+    /resource botIdentityBot[\s\S]+?name: '([^']+)'/,
+  );
+  assert.ok(match);
+  assert.ok(match[1].replace("${suffix}", "abcdef").length <= 42);
+});
+
 test("rejects unsupported resource kinds", () => {
   assert.throws(
     () =>

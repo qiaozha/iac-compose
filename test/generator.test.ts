@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import { generateDeploymentCode } from "../src/generator.js";
 import {
   provisioningDependencies,
+  renderEntraIdentityConfigurationSource,
   renderProvisioningSource,
 } from "../src/provisioning-source.js";
 
@@ -124,6 +125,63 @@ test("generates chatbot-style deployment code in dependency order", async () => 
   assert.match(frontend, /defaultAction: "Deny"/);
   assert.doesNotMatch(frontend, /const resources\s*=|"requiredBy"|"produces"/);
   assert.match(backend, /defaultAction: "Allow"/);
+});
+
+test("limits generated Azure Bot names to 42 characters", async () => {
+  const root = await mkdtemp(join(tmpdir(), "deploy-js-bot-name-"));
+  const resourcesFile = join(root, "resource-requirements.json");
+  const solutionFile = join(root, "solution.json");
+  const outputDirectory = join(root, "deployment");
+  await writeFile(
+    resourcesFile,
+    JSON.stringify({
+      schemaVersion: "1.0",
+      solution: {
+        name: "azure-sdk-engineering-assistant",
+        enabledComponents: ["frontend"],
+      },
+      resources: [
+        {
+          id: "frontendCompute",
+          kind: "container-host",
+          requiredBy: ["frontend"],
+          source: "components/frontend",
+          produces: ["frontendBaseUrl"],
+        },
+        {
+          id: "botIdentity",
+          kind: "bot-identity",
+          requiredBy: ["frontend"],
+          produces: ["botClientId", "botIdentityResourceId", "tenantId"],
+        },
+      ],
+    }),
+  );
+  await writeFile(
+    solutionFile,
+    JSON.stringify({
+      schemaVersion: "1.0",
+      components: [
+        { id: "frontend", kind: "http-api", source: "components/frontend" },
+      ],
+    }),
+  );
+
+  await generateDeploymentCode({
+    resourcesFile,
+    solutionFile,
+    outputDirectory,
+  });
+
+  const provisioning = await readFile(
+    join(outputDirectory, "components/frontend/provisioning.ts"),
+    "utf8",
+  );
+  const match = provisioning.match(
+    /const botIdentityBot = new Bot\(stack, \{\s+name: fn\.concat\("([^"]+)", suffix\)/,
+  );
+  assert.ok(match);
+  assert.ok(`${match[1]}abcdef`.length <= 42);
 });
 
 test("generate provisions the current Microsoft Entra authentication contract", async () => {
@@ -297,6 +355,59 @@ test("authorizes peer identities and generates private App Service networking", 
   assert.match(frontend, /publicNetworkAccess: "Disabled"/);
   assert.match(frontend, /configureEntraApplications/);
   assert.doesNotMatch(frontend, /ensureAppServicePeerAuthentication/);
+  assert.match(identityConfiguration, /Microsoft\.Graph\/appRoleAssignedTo/);
+  assert.match(identityConfiguration, /frontendIdentityPrincipalId/);
+});
+
+test("authorizes peer identities without private App Service networking", () => {
+  const identityConfiguration = renderEntraIdentityConfigurationSource({
+    requirements: {
+      schemaVersion: "1.0",
+      solution: {
+        name: "support",
+        enabledComponents: ["backend", "frontend"],
+      },
+      resources: [
+        {
+          id: "backendCompute",
+          kind: "container-host",
+          requiredBy: ["backend"],
+          authentication: "microsoft-entra",
+          configuration: {
+            ingress: { mode: "unrestricted" },
+            authentication: {
+              provider: "microsoft-entra",
+              delegatedPermissionScope: "token",
+              authorizedClientApplicationIds: [],
+              callerResources: ["frontendCompute"],
+            },
+          },
+          produces: ["backendBaseUrl"],
+        },
+        {
+          id: "frontendCompute",
+          kind: "container-host",
+          requiredBy: ["frontend"],
+          produces: [
+            "frontendBaseUrl",
+            "frontendIdentityPrincipalId",
+            "frontendIdentityResourceId",
+          ],
+        },
+      ],
+    },
+    solution: {
+      schemaVersion: "1.0",
+      components: [
+        { id: "backend" },
+        { id: "frontend" },
+      ],
+    },
+    orderedComponents: ["backend", "frontend"],
+    templates: {},
+    serviceManagementReference: "service-management-reference",
+  });
+
   assert.match(identityConfiguration, /Microsoft\.Graph\/appRoleAssignedTo/);
   assert.match(identityConfiguration, /frontendIdentityPrincipalId/);
 });

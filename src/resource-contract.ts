@@ -759,7 +759,7 @@ class ResourceContractRenderer {
       "}",
       "",
       `resource ${symbols.main}Bot 'Microsoft.BotService/botServices@2022-09-15' = {`,
-      `  name: ${azureName(this.#contract.solution.name, `${resource.id}-bot`, 64, true)}`,
+      `  name: ${azureName(this.#contract.solution.name, `${resource.id}-bot`, 42, true)}`,
       "  location: 'global'",
       "  kind: 'azurebot'",
       "  sku: { name: 'F0' }",

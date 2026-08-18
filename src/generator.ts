@@ -381,6 +381,29 @@ function validateContracts(
       }
     }
   }
+  for (const target of requirements.resources) {
+    const callerIds = authenticatedCallerResourceIds(target);
+    const uniqueCallerIds = new Set<string>();
+    for (const callerId of callerIds) {
+      if (uniqueCallerIds.has(callerId)) {
+        throw new Error(
+          `Resource '${target.id}' contains duplicate authenticated caller '${callerId}'.`,
+        );
+      }
+      uniqueCallerIds.add(callerId);
+      const caller = resourcesById.get(callerId);
+      if (!caller) {
+        throw new Error(
+          `Resource '${target.id}' references unknown authenticated caller '${callerId}'.`,
+        );
+      }
+      if (caller === target) {
+        throw new Error(
+          `Resource '${target.id}' cannot authorize itself as a caller.`,
+        );
+      }
+    }
+  }
   for (const binding of collectOutputBindings(requirements.resources)) {
     if (!outputs.has(binding)) {
       throw new Error(`Output binding '${binding}' has no producing resource.`);
@@ -521,6 +544,20 @@ function privateEndpointSourceResourceIds(
     : stringArray(
         sourceResources,
         `${resource.id}.configuration.ingress.privateEndpoint.sourceResources`,
+      );
+}
+
+function authenticatedCallerResourceIds(
+  resource: ResourceRequirement,
+): readonly string[] {
+  const authentication = asRecord(
+    asRecord(resource.configuration).authentication,
+  );
+  return authentication.callerResources === undefined
+    ? []
+    : stringArray(
+        authentication.callerResources,
+        `${resource.id}.configuration.authentication.callerResources`,
       );
 }
 
@@ -969,6 +1006,8 @@ ${entraConfigurationBlock}${serviceTagIngressBlock}${privateEndpointBlock}  cons
     ...(deployment.dryRun
       ? {}
       : { resourceName: requiredEnv(${JSON.stringify(implementationOutputName(resource.id, "NAME"))}) }),
+    resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
+    subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
     project: resolve(packageRoot, ${JSON.stringify(resource.source ?? source ?? ".")}),
     dockerfile: "Dockerfile",
     context: ".",

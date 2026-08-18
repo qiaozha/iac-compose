@@ -525,6 +525,9 @@ export async function provisionTeamsApplication(
       TEAMSFX_ENV: teamsEnvironment,
     };
     Object.assign(environment, options.manifestValues);
+    environment.TEAMS_APP_VERSION =
+      options.manifestValues.TEAMS_APP_VERSION?.trim() ||
+      teamsApplicationVersion();
     environment.TEAMS_APP_NAME ??=
       options.manifestValues.TEAMS_BOT_FULL_DISPLAY_NAME?.trim() ||
       options.component;
@@ -583,7 +586,7 @@ interface TeamsApplicationInstallationOptions {
 }
 
 interface InstalledTeamsApplicationsResponse {
-  value?: Array<{ teamsApp?: { externalId?: string } }>;
+  value?: Array<{ id?: string; teamsApp?: { externalId?: string } }>;
 }
 
 async function ensureTeamsApplicationInstalled(
@@ -602,13 +605,35 @@ async function ensureTeamsApplicationInstalled(
       `${installedAppsUrl}?$expand=teamsApp`,
     ],
   );
-  const installed = Array.isArray(response?.value) &&
-    response.value.some(
+  const installed = Array.isArray(response?.value)
+    ? response.value.find(
       (installation) =>
         installation.teamsApp?.externalId === options.teamsAppId,
-    );
+    )
+    : undefined;
   if (installed) {
-    return;
+    await deployment.execute({
+      command: "npx",
+      args: [
+        "--yes",
+        "@microsoft/teamsapp-cli",
+        "uninstall",
+        "--mode",
+        "manifest-id",
+        "--manifest-id",
+        options.teamsAppId,
+        "--options",
+        "m365-app",
+        "--interactive",
+        "false",
+      ],
+      cwd: options.componentDirectory,
+      env: {
+        CI: "",
+        TF_BUILD: "",
+        TEAMSFX_INTERACTIVE: "true",
+      },
+    });
   }
 
   const packagePath = resolve(
@@ -639,6 +664,27 @@ async function ensureTeamsApplicationInstalled(
     },
   });
   const catalogAppId = parseTeamsCatalogAppId(output);
+
+  if (installed) {
+    const installationId = installed.id?.trim();
+    if (!installationId) {
+      throw new Error(
+        `Teams application '${options.teamsAppId}' installation did not include an id.`,
+      );
+    }
+    await deployment.execute({
+      command: "az",
+      args: [
+        "rest",
+        "--method",
+        "delete",
+        "--url",
+        `${installedAppsUrl}/${encodeURIComponent(installationId)}`,
+        "--output",
+        "none",
+      ],
+    });
+  }
   await deployment.execute({
     command: "az",
     args: [
@@ -930,6 +976,14 @@ function serializeEnvironment(values: Readonly<Record<string, string>>): string 
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([name, value]) => `${name}=${quoteEnvironmentValue(value)}`)
     .join("\n")}\n`;
+}
+
+function teamsApplicationVersion(now = Date.now()): string {
+  const partSize = 65_536;
+  const major = Math.floor(now / (partSize * partSize));
+  const minor = Math.floor(now / partSize) % partSize;
+  const patch = now % partSize;
+  return `${major}.${minor}.${patch}`;
 }
 
 function quoteEnvironmentValue(value: string): string {

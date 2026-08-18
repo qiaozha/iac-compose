@@ -27,6 +27,7 @@ export {
   captureAzureJson,
   createAppServiceContainerManifest,
   deployAppServiceContainer,
+  ensureAppServiceContainerPullIdentity,
   ensureAppServiceIngress,
   ensureAppServicePrivateEndpoint,
   ensureAppServicePeerIngress,

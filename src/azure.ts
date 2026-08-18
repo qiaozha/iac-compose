@@ -151,6 +151,14 @@ export interface AppServiceContainerOptions {
   tag?: string;
   remoteBuild?: boolean;
   environment?: Readonly<Record<string, string>>;
+  resourceGroup?: string;
+  subscription?: string;
+}
+
+export interface AppServiceContainerPullIdentityOptions {
+  resourceGroup: string;
+  siteName: string;
+  subscription?: string;
 }
 
 export interface AppServiceIngressOptions {
@@ -263,6 +271,35 @@ export async function ensureAppServiceIngress(
     "--query",
     "ipSecurityRestrictions",
   ]);
+  if (options.defaultAction === "Allow") {
+    const catchAllDenyRules = restrictions.filter(
+      (restriction) =>
+        restriction.action?.toLowerCase() === "deny" &&
+        normalizeIpAddress(restriction.ipAddress ?? "") === "any",
+    );
+    for (const restriction of catchAllDenyRules) {
+      const name = restriction.name?.trim();
+      const selector = name
+        ? ["--rule-name", name]
+        : ["--ip-address", restriction.ipAddress ?? "Any"];
+      await runAzure(deployment, [
+        "webapp",
+        "config",
+        "access-restriction",
+        "remove",
+        ...subscriptionArgs,
+        "--resource-group",
+        options.resourceGroup,
+        "--name",
+        options.siteName,
+        ...selector,
+        "--action",
+        "Deny",
+        "--output",
+        "none",
+      ]);
+    }
+  }
   const existingTags = new Set(
     restrictions
       .filter(
@@ -865,10 +902,108 @@ export async function deployAppServiceContainer(
   options: AppServiceContainerOptions,
 ): Promise<Record<string, string>> {
   const project = await prepareAppServiceContainer(deployment, options);
-  return project.deploy(
+  const outputs = await project.deploy(
     options.service,
     options.image ? { fromPackage: options.image } : {},
   );
+  if (options.resourceName && options.resourceGroup) {
+    await ensureAppServiceContainerPullIdentity(deployment, {
+      resourceGroup: options.resourceGroup,
+      siteName: options.resourceName,
+      subscription: options.subscription,
+    });
+  }
+  return outputs;
+}
+
+export async function ensureAppServiceContainerPullIdentity(
+  deployment: Deployment,
+  options: AppServiceContainerPullIdentityOptions,
+): Promise<void> {
+  const subscriptionArgs = options.subscription
+    ? ["--subscription", options.subscription]
+    : [];
+  const identity = await captureAzureJson<{
+    userAssignedIdentities?: Readonly<
+      Record<string, { clientId?: string }>
+    >;
+  }>(deployment, [
+    "webapp",
+    "identity",
+    "show",
+    ...subscriptionArgs,
+    "--resource-group",
+    options.resourceGroup,
+    "--name",
+    options.siteName,
+  ]);
+  const clientIds = Object.values(identity.userAssignedIdentities ?? {})
+    .map(({ clientId }) => clientId?.trim())
+    .filter((clientId): clientId is string => Boolean(clientId));
+  if (clientIds.length === 0) return;
+
+  const configuredClientId = (
+    await captureAzure(deployment, [
+      "webapp",
+      "config",
+      "show",
+      ...subscriptionArgs,
+      "--resource-group",
+      options.resourceGroup,
+      "--name",
+      options.siteName,
+      "--query",
+      "acrUserManagedIdentityID",
+      "--output",
+      "tsv",
+    ])
+  ).trim();
+  if (clientIds.includes(configuredClientId)) return;
+
+  let clientId = clientIds[0]!;
+  if (clientIds.length > 1) {
+    const applicationClientId = (
+      await captureAzure(deployment, [
+        "webapp",
+        "config",
+        "appsettings",
+        "list",
+        ...subscriptionArgs,
+        "--resource-group",
+        options.resourceGroup,
+        "--name",
+        options.siteName,
+        "--query",
+        "[?name=='AZURE_CLIENT_ID'].value | [0]",
+        "--output",
+        "tsv",
+      ])
+    ).trim();
+    if (!clientIds.includes(applicationClientId)) {
+      throw new Error(
+        `App Service '${options.siteName}' has multiple user-assigned identities and no matching AZURE_CLIENT_ID setting.`,
+      );
+    }
+    clientId = applicationClientId;
+  }
+
+  await runAzure(deployment, [
+    "webapp",
+    "config",
+    "set",
+    ...subscriptionArgs,
+    "--resource-group",
+    options.resourceGroup,
+    "--name",
+    options.siteName,
+    "--generic-configurations",
+    JSON.stringify({
+      acrUseManagedIdentityCreds: true,
+      acrUserManagedIdentityID: clientId,
+    }),
+    "--output",
+    "none",
+  ]);
 }
 
 export async function prepareAppServiceContainer(
