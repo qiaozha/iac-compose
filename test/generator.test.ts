@@ -6,7 +6,10 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
 
-import { generateDeploymentCode } from "../src/generator.js";
+import {
+  generateDeploymentCode,
+  type DeploymentCodeGenerationProgress,
+} from "../src/generator.js";
 import {
   provisioningDependencies,
   renderEntraIdentityConfigurationSource,
@@ -76,13 +79,29 @@ test("generates chatbot-style deployment code in dependency order", async () => 
     }),
   );
 
+  const progress: DeploymentCodeGenerationProgress[] = [];
   const result = await generateDeploymentCode({
     resourcesFile,
     solutionFile,
     outputDirectory,
+    onProgress: (event) => progress.push(event),
   });
 
   assert.deepEqual(result.components, ["shared", "backend", "frontend"]);
+  assert.deepEqual(
+    progress.map(({ stage, percent }) => ({ stage, percent })),
+    [
+      { stage: "loadingInputs", percent: 5 },
+      { stage: "validatingContracts", percent: 20 },
+      { stage: "planningComponents", percent: 35 },
+      { stage: "renderingSources", percent: 50 },
+      { stage: "writingFiles", percent: 90 },
+      { stage: "completed", percent: 100 },
+    ],
+  );
+  assert.equal(progress.at(-1)?.componentCount, 2);
+  assert.equal(progress.at(-1)?.fileCount, result.files.length);
+  assert.equal(progress.at(-1)?.outputDirectory, outputDirectory);
   const deployment = await readFile(join(outputDirectory, "deploy.ts"), "utf8");
   const backendPosition = deployment.indexOf("await backend(deployment)");
   const frontendPosition = deployment.indexOf("await frontend(deployment)");
@@ -351,6 +370,8 @@ test("authorizes peer identities and generates private App Service networking", 
   assert.match(frontend, /ensureAppServicePrivateEndpoint/);
   assert.doesNotMatch(frontend, /ensureAppServicePeerIngress/);
   assert.match(frontend, /location: requiredEnv\("AZURE_LOCATION"\)/);
+  assert.match(frontend, /resourceGroup: requiredEnv\("AZURE_RESOURCE_GROUP"\)/);
+  assert.match(frontend, /subscription: requiredEnv\("AZURE_SUBSCRIPTION_ID"\)/);
   assert.match(frontend, /targetResourceName: "backendCompute"/);
   assert.match(frontend, /publicNetworkAccess: "Disabled"/);
   assert.match(frontend, /configureEntraApplications/);

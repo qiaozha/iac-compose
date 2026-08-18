@@ -64,6 +64,7 @@ export {
 export {
   generateDeploymentCode,
   loadResourceRequirements,
+  type DeploymentCodeGenerationProgress,
   type DeploymentSolution,
   type GenerateDeploymentCodeOptions,
   type GenerateDeploymentCodeResult,

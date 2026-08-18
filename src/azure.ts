@@ -243,7 +243,7 @@ export async function waitForAppServiceReady(
       }
     },
     {
-      attempts: options.attempts ?? 20,
+      attempts: options.attempts ?? 40,
       delayMs: options.delayMs ?? 15_000,
     },
   );
@@ -943,20 +943,38 @@ export async function ensureAppServiceContainerPullIdentity(
   if (clientIds.length === 0) return;
 
   const configuredClientId = (
-    await captureAzure(deployment, [
-      "webapp",
-      "config",
-      "show",
-      ...subscriptionArgs,
-      "--resource-group",
-      options.resourceGroup,
-      "--name",
-      options.siteName,
-      "--query",
-      "acrUserManagedIdentityID",
-      "--output",
-      "tsv",
-    ])
+    await captureAzure(
+      deployment,
+      options.subscription
+        ? [
+            "rest",
+            "--method",
+            "get",
+            "--uri",
+            `https://management.azure.com/subscriptions/${encodeURIComponent(options.subscription)}` +
+              `/resourceGroups/${encodeURIComponent(options.resourceGroup)}` +
+              `/providers/Microsoft.Web/sites/${encodeURIComponent(options.siteName)}` +
+              "/config/web?api-version=2024-11-01",
+            "--query",
+            "properties.acrUserManagedIdentityID",
+            "--output",
+            "tsv",
+          ]
+        : [
+            "webapp",
+            "config",
+            "show",
+            ...subscriptionArgs,
+            "--resource-group",
+            options.resourceGroup,
+            "--name",
+            options.siteName,
+            "--query",
+            "acrUserManagedIdentityID",
+            "--output",
+            "tsv",
+          ],
+    )
   ).trim();
   if (clientIds.includes(configuredClientId)) return;
 

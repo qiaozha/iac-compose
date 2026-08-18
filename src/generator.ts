@@ -29,6 +29,24 @@ export interface GenerateDeploymentCodeOptions {
   resourcesFile: string;
   solutionFile: string;
   outputDirectory: string;
+  onProgress?: (
+    progress: DeploymentCodeGenerationProgress,
+  ) => void | Promise<void>;
+}
+
+export interface DeploymentCodeGenerationProgress {
+  stage:
+    | "loadingInputs"
+    | "validatingContracts"
+    | "planningComponents"
+    | "renderingSources"
+    | "writingFiles"
+    | "completed";
+  percent: number;
+  message: string;
+  outputDirectory: string;
+  componentCount?: number | undefined;
+  fileCount?: number | undefined;
 }
 
 export interface GenerateDeploymentCodeResult {
@@ -76,6 +94,12 @@ export async function generateDeploymentCode(
   const resourcesFile = resolve(options.resourcesFile);
   const solutionFile = resolve(options.solutionFile);
   const outputDirectory = resolve(options.outputDirectory);
+  await reportGenerationProgress(options, {
+    stage: "loadingInputs",
+    percent: 5,
+    message: "Loading deployment contracts.",
+    outputDirectory,
+  });
   const [requirements, solutionValue] = await Promise.all([
     loadResourceRequirements(resourcesFile),
     readJson(solutionFile),
@@ -83,8 +107,21 @@ export async function generateDeploymentCode(
   const solution = parseDeploymentSolution(solutionValue, solutionFile);
   validateContracts(requirements, solution);
   const validationPlan = planResourceValidation(requirements, solution);
+  await reportGenerationProgress(options, {
+    stage: "validatingContracts",
+    percent: 20,
+    message: "Validated deployment contracts.",
+    outputDirectory,
+  });
 
   const orderedComponents = orderComponents(requirements, solution);
+  await reportGenerationProgress(options, {
+    stage: "planningComponents",
+    percent: 35,
+    message: `Planned ${orderedComponents.length} deployment components.`,
+    outputDirectory,
+    componentCount: orderedComponents.length,
+  });
   const componentNames = new Map(
     orderedComponents.map((component) => [component, typescriptIdentifier(component)]),
   );
@@ -107,6 +144,13 @@ export async function generateDeploymentCode(
   const hasEntra = hasEntraApplications(sourceOptions);
   const identityConfigurationOwner = entraConfigurationOwner(sourceOptions);
   const files = new Map<string, string>();
+  await reportGenerationProgress(options, {
+    stage: "renderingSources",
+    percent: 50,
+    message: "Rendering deployment source files.",
+    outputDirectory,
+    componentCount: orderedComponents.length,
+  });
 
   files.set(
     "package.json",
@@ -210,11 +254,34 @@ export async function generateDeploymentCode(
     );
   }
 
+  await reportGenerationProgress(options, {
+    stage: "writingFiles",
+    percent: 90,
+    message: `Writing ${files.size} generated deployment files.`,
+    outputDirectory,
+    componentCount: orderedComponents.length,
+    fileCount: files.size,
+  });
   await installGeneratedFiles(outputDirectory, files);
+  await reportGenerationProgress(options, {
+    stage: "completed",
+    percent: 100,
+    message: `Generated ${files.size} deployment files.`,
+    outputDirectory,
+    componentCount: orderedComponents.length,
+    fileCount: files.size,
+  });
   return {
     components: ["shared", ...orderedComponents],
     files: [...files.keys()].sort(),
   };
+}
+
+async function reportGenerationProgress(
+  options: GenerateDeploymentCodeOptions,
+  progress: DeploymentCodeGenerationProgress,
+): Promise<void> {
+  await options.onProgress?.(progress);
 }
 
 export async function loadResourceRequirements(
