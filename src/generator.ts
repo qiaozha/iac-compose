@@ -921,7 +921,7 @@ function renderContainerComponent(
   const runtimeSettings = asRecord(configuration.runtimeSettings);
   const ingress = asRecord(configuration.ingress);
   const ingressMode = ingress.mode === undefined
-    ? Object.keys(ingress).length > 0 ? "restricted" : undefined
+    ? Object.keys(ingress).length > 0 ? "restricted" : "unrestricted"
     : requiredString(
         ingress.mode,
         `${resource.id}.configuration.ingress.mode`,
@@ -937,7 +937,7 @@ function renderContainerComponent(
   }
   const ingressDefaultAction = ingressMode === "restricted"
     ? "Deny"
-    : ingressMode === "unrestricted" ? "Allow" : undefined;
+    : "Allow";
   const allowedServiceTags =
     ingress.allowedServiceTags === undefined
       ? []
