@@ -48,6 +48,11 @@ async function main(): Promise<void> {
       resourcesFile: options.resourcesFile,
       solutionFile: options.solutionFile,
       outputDirectory: options.outputDirectory,
+      onProgress: (progress) => {
+        console.log(
+          `[deploy-js] GENERATE ${progress.percent}% ${progress.message}`,
+        );
+      },
     });
     console.log(
       `[deploy-js] generated ${result.files.length} files in ${resolve(options.outputDirectory)}`,

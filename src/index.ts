@@ -27,6 +27,7 @@ export {
   captureAzureJson,
   createAppServiceContainerManifest,
   deployAppServiceContainer,
+  ensureAppServiceContainerPullIdentity,
   ensureAppServiceIngress,
   ensureAppServicePrivateEndpoint,
   ensureAppServicePeerIngress,
@@ -63,6 +64,7 @@ export {
 export {
   generateDeploymentCode,
   loadResourceRequirements,
+  type DeploymentCodeGenerationProgress,
   type DeploymentSolution,
   type GenerateDeploymentCodeOptions,
   type GenerateDeploymentCodeResult,

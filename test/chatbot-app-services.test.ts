@@ -3,7 +3,12 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { test } from "node:test";
 
-import { createAppServiceContainerManifest } from "../src/index.js";
+import {
+  createAppServiceContainerManifest,
+  ensureAppServiceContainerPullIdentity,
+  type Command,
+  type Deployment,
+} from "../src/index.js";
 import {
   frontendAccessRestrictionArgs,
   frontendAccessRestrictionQueryArgs,
@@ -75,6 +80,46 @@ test("Function container manifest uses azd's function target", () => {
         },
       },
     },
+  );
+});
+
+test("keeps the configured App Service ACR pull identity", async () => {
+  const captured: Command[] = [];
+  const executed: Command[] = [];
+  const deployment = {
+    capture: async (command: Command) => {
+      captured.push(command);
+      if (command.args?.[0] === "webapp" && command.args[1] === "identity") {
+        return JSON.stringify({
+          userAssignedIdentities: {
+            pull: { clientId: "pull-client" },
+            runtime: { clientId: "runtime-client" },
+          },
+        });
+      }
+      if (command.args?.[0] === "rest") return "pull-client\n";
+      throw new Error(`Unexpected command '${command.args?.join(" ")}'.`);
+    },
+    execute: async (command: Command) => {
+      executed.push(command);
+    },
+  } as unknown as Deployment;
+
+  await ensureAppServiceContainerPullIdentity(deployment, {
+    resourceGroup: "resource-group",
+    siteName: "frontend",
+    subscription: "subscription-id",
+  });
+
+  assert.equal(executed.length, 0);
+  assert.equal(captured.length, 2);
+  assert.deepEqual(captured[1]?.args?.slice(0, 3), [
+    "rest",
+    "--method",
+    "get",
+  ]);
+  assert.ok(
+    captured[1]?.args?.includes("properties.acrUserManagedIdentityID"),
   );
 });
 
