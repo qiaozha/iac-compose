@@ -444,10 +444,15 @@ export function renderEntraIdentityLifecycleSource(
     preAuthorizeClientsOutput: ${JSON.stringify(entraOutput(plan.resource.id, "PREAUTHORIZE_CLIENTS"))},
     existingPermissionScopesOutput: ${JSON.stringify(entraOutput(plan.resource.id, "EXISTING_PERMISSION_SCOPES"))},
     existingApplicationRolesOutput: ${JSON.stringify(entraOutput(plan.resource.id, "EXISTING_APPLICATION_ROLES"))},
+    siteNameOutput: ${JSON.stringify(implementationOutput(plan.resource.id, "NAME"))},
+    authorizedClientApplicationIds: ${JSON.stringify(plan.authorizedClientApplicationIds)},
+    callerApplications: ${JSON.stringify(plan.callerApplications)},
     callerPrincipalOutputs: ${JSON.stringify(plan.callerPrincipalOutputs)},
   },`).join("\n");
   return `import {
+  captureAzure,
   captureAzureJson,
+  ensureAppServiceClientAuthorization,
   runAzure,
   type Deployment,
 } from "imperative-deploy";
@@ -581,6 +586,29 @@ export async function configureEntraApplications(
     for (const output of plan.callerPrincipalOutputs) {
       environmentValues[output] = process.env[output]?.trim() ?? "";
     }
+    for (const caller of plan.callerApplications) {
+      const principalId = deployment.dryRun
+        ? caller.applicationId
+        : (
+            await captureAzure(deployment, [
+              "ad",
+              "sp",
+              "show",
+              "--id",
+              caller.applicationId,
+              "--query",
+              "id",
+              "--output",
+              "tsv",
+            ])
+          ).trim();
+      if (!principalId) {
+        throw new Error(
+          "Application '" + caller.applicationId + "' has no service principal.",
+        );
+      }
+      environmentValues[caller.principalOutput] = principalId;
+    }
   }
   const provisionPermissions = (
     name: string,
@@ -610,6 +638,44 @@ export async function configureEntraApplications(
   if (!deployment.dryRun) {
     await persistEnvironment(requiredEnv("AZURE_ENV_NAME"), outputs);
   }
+  await deployment.deploy("server application client authorization", async () => {
+    for (const plan of applicationPlans) {
+      const allowedApplicationIds = [
+        ...plan.authorizedClientApplicationIds,
+        ...plan.callerApplications.map(({ applicationId }) => applicationId),
+      ];
+      for (const output of plan.callerPrincipalOutputs) {
+        const principalId =
+          environmentValues[output]?.trim() || process.env[output]?.trim();
+        if (!principalId) continue;
+        const applicationId = (
+          await captureAzure(deployment, [
+            "ad",
+            "sp",
+            "show",
+            "--id",
+            principalId,
+            "--query",
+            "appId",
+            "--output",
+            "tsv",
+          ])
+        ).trim();
+        if (!applicationId) {
+          throw new Error(
+            "Service principal '" + principalId + "' did not return an application ID.",
+          );
+        }
+        allowedApplicationIds.push(applicationId);
+      }
+      await ensureAppServiceClientAuthorization(deployment, {
+        resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
+        siteName: requiredEnv(plan.siteNameOutput),
+        subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
+        allowedApplicationIds,
+      });
+    }
+  });
 }
 
 async function resolveApplicationUniqueName(
@@ -2275,6 +2341,10 @@ interface EntraApplicationPlan {
   displayName: string;
   delegatedPermissionScope: string;
   authorizedClientApplicationIds: readonly string[];
+  callerApplications: readonly {
+    applicationId: string;
+    principalOutput: string;
+  }[];
   callerPrincipalOutputs: readonly string[];
 }
 
@@ -2315,6 +2385,22 @@ function entraApplicationPlans(
   return options.requirements.resources.flatMap((resource) => {
     const authentication = microsoftEntraAuthentication(resource);
     if (!authentication) return [];
+    const callerApplications = authentication.callerApplicationIds.map(
+      (applicationId, index) => ({
+        applicationId,
+        principalOutput: entraOutput(
+          resource.id,
+          `CALLER_APPLICATION_${index + 1}_PRINCIPAL_ID`,
+        ),
+      }),
+    );
+    const callerPrincipalOutputs = new Set([
+      ...entraCallerPrincipalOutputs(options, resource),
+      ...callerApplications.map(({ principalOutput }) => principalOutput),
+      ...(authentication.authorizeDeploymentPrincipal
+        ? ["AZURE_PRINCIPAL_ID"]
+        : []),
+    ]);
     return [{
       resource,
       base: identifier(resource.id),
@@ -2327,7 +2413,8 @@ function entraApplicationPlans(
         authentication.delegatedPermissionScope ?? "access_as_user",
       authorizedClientApplicationIds:
         authentication.authorizedClientApplicationIds,
-      callerPrincipalOutputs: entraCallerPrincipalOutputs(options, resource),
+      callerApplications,
+      callerPrincipalOutputs: [...callerPrincipalOutputs],
     }];
   });
 }
@@ -2407,6 +2494,8 @@ function microsoftEntraAuthentication(
   | {
       delegatedPermissionScope?: string;
       authorizedClientApplicationIds: readonly string[];
+      callerApplicationIds: readonly string[];
+      authorizeDeploymentPrincipal: boolean;
     }
   | undefined {
   if (
@@ -2422,7 +2511,11 @@ function microsoftEntraAuthentication(
     resource.authentication === "managed-identity" &&
     Object.keys(authentication).length === 0
   ) {
-    return { authorizedClientApplicationIds: [] };
+    return {
+      authorizedClientApplicationIds: [],
+      callerApplicationIds: [],
+      authorizeDeploymentPrincipal: false,
+    };
   }
   const provider = requiredString(
     authentication.provider,
@@ -2447,6 +2540,19 @@ function microsoftEntraAuthentication(
         `${resource.id}.configuration.authentication.authorizedClientApplicationIds[${index}]`,
       )
     ),
+    callerApplicationIds: arrayValue(
+      authentication.callerApplicationIds,
+    ).map((applicationId, index) =>
+      requiredString(
+        applicationId,
+        `${resource.id}.configuration.authentication.callerApplicationIds[${index}]`,
+      )
+    ),
+    authorizeDeploymentPrincipal: optionalBoolean(
+      authentication.authorizeDeploymentPrincipal,
+      `${resource.id}.configuration.authentication.authorizeDeploymentPrincipal`,
+      false,
+    ),
   };
 }
 
@@ -2459,6 +2565,16 @@ function requiredObject(value: unknown, name: string): Readonly<Record<string, u
 
 function requiredArray(value: unknown, name: string): readonly unknown[] {
   if (!Array.isArray(value)) throw new Error(`${name} must be an array.`);
+  return value;
+}
+
+function optionalBoolean(
+  value: unknown,
+  name: string,
+  fallback: boolean,
+): boolean {
+  if (value === undefined) return fallback;
+  if (typeof value !== "boolean") throw new Error(`${name} must be a boolean.`);
   return value;
 }
 

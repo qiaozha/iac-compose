@@ -161,6 +161,13 @@ export interface AppServiceContainerPullIdentityOptions {
   subscription?: string;
 }
 
+export interface AppServiceClientAuthorizationOptions {
+  resourceGroup: string;
+  siteName: string;
+  allowedApplicationIds: readonly string[];
+  subscription: string;
+}
+
 export interface AppServiceIngressOptions {
   resourceGroup: string;
   siteName: string;
@@ -210,6 +217,69 @@ interface AppServiceAccessRestriction {
   name?: string;
   priority?: number;
   tag?: string;
+}
+
+export async function ensureAppServiceClientAuthorization(
+  deployment: Deployment,
+  options: AppServiceClientAuthorizationOptions,
+): Promise<void> {
+  const uri =
+    `https://management.azure.com/subscriptions/${encodeURIComponent(options.subscription)}` +
+    `/resourceGroups/${encodeURIComponent(options.resourceGroup)}` +
+    `/providers/Microsoft.Web/sites/${encodeURIComponent(options.siteName)}` +
+    "/config/authsettingsV2?api-version=2023-12-01";
+  const authSettings = await captureAzureJson<{ properties?: unknown }>(
+    deployment,
+    ["rest", "--method", "get", "--uri", uri],
+  );
+  const properties = mutableRecord(authSettings.properties);
+  const identityProviders = mutableRecord(properties.identityProviders);
+  const azureActiveDirectory = mutableRecord(
+    identityProviders.azureActiveDirectory,
+  );
+  const validation = mutableRecord(azureActiveDirectory.validation);
+  const authorizationPolicy = mutableRecord(
+    validation.defaultAuthorizationPolicy,
+  );
+  const desired = uniqueIdentifiers(options.allowedApplicationIds);
+  const existing = uniqueIdentifiers(
+    Array.isArray(authorizationPolicy.allowedApplications)
+      ? authorizationPolicy.allowedApplications.filter(
+          (value): value is string => typeof value === "string",
+        )
+      : [],
+  );
+  if (sameIdentifiers(existing, desired)) return;
+
+  authorizationPolicy.allowedApplications = desired;
+  validation.defaultAuthorizationPolicy = authorizationPolicy;
+  azureActiveDirectory.validation = validation;
+  identityProviders.azureActiveDirectory = azureActiveDirectory;
+  properties.identityProviders = identityProviders;
+  await runAzure(deployment, [
+    "rest",
+    "--method",
+    "put",
+    "--uri",
+    uri,
+    "--body",
+    JSON.stringify({ properties }),
+    "--output",
+    "none",
+  ]);
+  await runAzure(deployment, [
+    "webapp",
+    "restart",
+    "--subscription",
+    options.subscription,
+    "--resource-group",
+    options.resourceGroup,
+    "--name",
+    options.siteName,
+    "--output",
+    "none",
+  ]);
+  await waitForAppServiceReady(deployment, options);
 }
 
 export async function waitForAppServiceReady(
@@ -895,6 +965,31 @@ function networkResourceName(value: string): string {
 
 function normalizeIpAddress(value: string): string {
   return value.trim().toLowerCase().replace(/\/(?:32|128)$/, "");
+}
+
+function mutableRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? { ...(value as Readonly<Record<string, unknown>>) }
+    : {};
+}
+
+function uniqueIdentifiers(values: readonly string[]): string[] {
+  const identifiers = new Map<string, string>();
+  for (const value of values) {
+    const identifier = value.trim();
+    const key = identifier.toLowerCase();
+    if (identifier && !identifiers.has(key)) identifiers.set(key, identifier);
+  }
+  return [...identifiers.values()];
+}
+
+function sameIdentifiers(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  if (left.length !== right.length) return false;
+  const expected = new Set(left.map((value) => value.toLowerCase()));
+  return right.every((value) => expected.has(value.toLowerCase()));
 }
 
 export async function deployAppServiceContainer(
