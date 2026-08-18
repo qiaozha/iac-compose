@@ -2335,7 +2335,9 @@ function entraCallerPrincipalOutputs(
   const targetOutputs = new Set(target.produces ?? []);
   const ingress = asObject(asObject(target.configuration).ingress);
   const privateEndpoint = asObject(ingress.privateEndpoint);
-  const authentication = asObject(asObject(target.configuration).authentication);
+  const authentication = asObject(
+    asObject(target.configuration).authentication,
+  );
   const allowedSources = new Set([
     ...arrayValue(authentication.callerResources),
     ...arrayValue(

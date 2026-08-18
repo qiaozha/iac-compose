@@ -617,7 +617,9 @@ function privateEndpointSourceResourceIds(
 function authenticatedCallerResourceIds(
   resource: ResourceRequirement,
 ): readonly string[] {
-  const authentication = asRecord(asRecord(resource.configuration).authentication);
+  const authentication = asRecord(
+    asRecord(resource.configuration).authentication,
+  );
   return authentication.callerResources === undefined
     ? []
     : stringArray(

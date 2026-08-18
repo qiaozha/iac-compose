@@ -271,6 +271,35 @@ export async function ensureAppServiceIngress(
     "--query",
     "ipSecurityRestrictions",
   ]);
+  if (options.defaultAction === "Allow") {
+    const catchAllDenyRules = restrictions.filter(
+      (restriction) =>
+        restriction.action?.toLowerCase() === "deny" &&
+        normalizeIpAddress(restriction.ipAddress ?? "") === "any",
+    );
+    for (const restriction of catchAllDenyRules) {
+      const name = restriction.name?.trim();
+      const selector = name
+        ? ["--rule-name", name]
+        : ["--ip-address", restriction.ipAddress ?? "Any"];
+      await runAzure(deployment, [
+        "webapp",
+        "config",
+        "access-restriction",
+        "remove",
+        ...subscriptionArgs,
+        "--resource-group",
+        options.resourceGroup,
+        "--name",
+        options.siteName,
+        ...selector,
+        "--action",
+        "Deny",
+        "--output",
+        "none",
+      ]);
+    }
+  }
   const existingTags = new Set(
     restrictions
       .filter(
@@ -895,7 +924,9 @@ export async function ensureAppServiceContainerPullIdentity(
     ? ["--subscription", options.subscription]
     : [];
   const identity = await captureAzureJson<{
-    userAssignedIdentities?: Record<string, { clientId?: string }>;
+    userAssignedIdentities?: Readonly<
+      Record<string, { clientId?: string }>
+    >;
   }>(deployment, [
     "webapp",
     "identity",
