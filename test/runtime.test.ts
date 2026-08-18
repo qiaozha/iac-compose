@@ -7,6 +7,7 @@ import { test } from "node:test";
 import {
   createDeployment,
   Deployment,
+  ensureAppServiceClientAuthorization,
   ensureAppServiceContainerPullIdentity,
   ensureAppServiceIngress,
   ensureAppServicePrivateEndpoint,
@@ -186,6 +187,125 @@ test("restores a missing user-assigned App Service container pull identity", asy
     "--output",
     "none",
   ]);
+});
+
+test("App Service client authorization preserves auth settings and replaces callers", async () => {
+  const commands: Command[] = [];
+  class ClientAuthorizationDeployment extends Deployment {
+    override async capture(command: Command): Promise<string> {
+      commands.push(command);
+      if (command.args?.some((argument) =>
+        argument.includes("/instances?api-version=2024-11-01")
+      )) {
+        return "READY\n";
+      }
+      return JSON.stringify({
+        properties: {
+          platform: { enabled: true },
+          identityProviders: {
+            azureActiveDirectory: {
+              enabled: true,
+              validation: {
+                allowedAudiences: ["api://backend"],
+                defaultAuthorizationPolicy: {
+                  allowedApplications: ["stale-client"],
+                  allowedPrincipals: {},
+                },
+              },
+            },
+          },
+        },
+      });
+    }
+
+    override async execute(command: Command): Promise<void> {
+      commands.push(command);
+    }
+  }
+
+  await ensureAppServiceClientAuthorization(
+    new ClientAuthorizationDeployment(),
+    {
+      resourceGroup: "resources",
+      siteName: "backend",
+      subscription: "subscription",
+      allowedApplicationIds: ["azure-cli", "bot-client", "BOT-CLIENT"],
+    },
+  );
+
+  assert.equal(commands.length, 4);
+  assert.deepEqual(commands[0]?.args, [
+    "rest",
+    "--method",
+    "get",
+    "--uri",
+    "https://management.azure.com/subscriptions/subscription/resourceGroups/resources/providers/Microsoft.Web/sites/backend/config/authsettingsV2?api-version=2023-12-01",
+    "--output",
+    "json",
+  ]);
+  const bodyIndex = commands[1]?.args?.indexOf("--body") ?? -1;
+  const body = JSON.parse(commands[1]?.args?.[bodyIndex + 1] ?? "null");
+  assert.deepEqual(
+    body.properties.identityProviders.azureActiveDirectory.validation,
+    {
+      allowedAudiences: ["api://backend"],
+      defaultAuthorizationPolicy: {
+        allowedApplications: ["azure-cli", "bot-client"],
+        allowedPrincipals: {},
+      },
+    },
+  );
+  assert.deepEqual(body.properties.platform, { enabled: true });
+  assert.deepEqual(commands[2]?.args, [
+    "webapp",
+    "restart",
+    "--subscription",
+    "subscription",
+    "--resource-group",
+    "resources",
+    "--name",
+    "backend",
+    "--output",
+    "none",
+  ]);
+  assert.ok(commands[3]?.args?.includes(
+    "https://management.azure.com/subscriptions/subscription/resourceGroups/resources/providers/Microsoft.Web/sites/backend/instances?api-version=2024-11-01",
+  ));
+});
+
+test("App Service client authorization skips an unchanged policy", async () => {
+  const commands: Command[] = [];
+  class UnchangedClientAuthorizationDeployment extends Deployment {
+    override async capture(command: Command): Promise<string> {
+      commands.push(command);
+      return JSON.stringify({
+        properties: {
+          identityProviders: {
+            azureActiveDirectory: {
+              validation: {
+                defaultAuthorizationPolicy: {
+                  allowedApplications: ["bot-client", "azure-cli"],
+                  allowedPrincipals: {},
+                },
+              },
+            },
+          },
+        },
+      });
+    }
+  }
+
+  await ensureAppServiceClientAuthorization(
+    new UnchangedClientAuthorizationDeployment(),
+    {
+      resourceGroup: "resources",
+      siteName: "backend",
+      subscription: "subscription",
+      allowedApplicationIds: ["azure-cli", "bot-client"],
+    },
+  );
+
+  assert.equal(commands.length, 1);
 });
 
 test("App Service ingress preserves existing rules and adds only missing tags", async () => {

@@ -346,6 +346,8 @@ test("authorizes peer identities and generates private App Service networking", 
               provider: "microsoft-entra",
               delegatedPermissionScope: "token",
               authorizedClientApplicationIds: ["existing-client-id"],
+              callerApplicationIds: ["platform-client-id"],
+              authorizeDeploymentPrincipal: true,
             },
           },
           produces: ["backendBaseUrl"],
@@ -394,6 +396,10 @@ test("authorizes peer identities and generates private App Service networking", 
     join(outputDirectory, "components/shared/identity-configuration.ts"),
     "utf8",
   );
+  const identityLifecycle = await readFile(
+    join(outputDirectory, "components/shared/identity.ts"),
+    "utf8",
+  );
   assert.match(frontend, /ensureAppServicePrivateEndpoint/);
   assert.doesNotMatch(frontend, /ensureAppServicePeerIngress/);
   assert.match(frontend, /location: requiredEnv\("AZURE_LOCATION"\)/);
@@ -406,6 +412,22 @@ test("authorizes peer identities and generates private App Service networking", 
   assert.doesNotMatch(frontend, /ensureAppServicePeerAuthentication/);
   assert.match(identityConfiguration, /Microsoft\.Graph\/appRoleAssignedTo/);
   assert.match(identityConfiguration, /frontendIdentityPrincipalId/);
+  assert.match(identityLifecycle, /ensureAppServiceClientAuthorization/);
+  assert.match(
+    identityLifecycle,
+    /siteNameOutput: "DEPLOY_RESOURCE_BACKENDCOMPUTE_NAME"/,
+  );
+  assert.match(
+    identityLifecycle,
+    /authorizedClientApplicationIds: \["existing-client-id"\]/,
+  );
+  assert.match(
+    identityLifecycle,
+    /callerApplications: \[\{"applicationId":"platform-client-id"/,
+  );
+  assert.match(identityLifecycle, /"AZURE_PRINCIPAL_ID"/);
+  assert.match(identityLifecycle, /Application .* has no service principal/);
+  assert.match(identityLifecycle, /"ad",\s+"sp",\s+"show"/);
 });
 
 test("authorizes peer identities without private App Service networking", () => {
