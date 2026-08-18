@@ -574,8 +574,8 @@ provision:
   );
 });
 
-test("Teams provisioning installs the generated app in its target team", async () => {
-  const root = await mkdtemp(join(tmpdir(), "deploy-js-teams-install-"));
+test("Teams provisioning leaves the generated app package for publication", async () => {
+  const root = await mkdtemp(join(tmpdir(), "deploy-js-teams-package-"));
   const source = join(root, "source");
   await mkdir(join(source, "env"), { recursive: true });
   await mkdir(join(source, "appPackage", "build"), { recursive: true });
@@ -590,19 +590,9 @@ test("Teams provisioning installs the generated app in its target team", async (
     "package",
   );
   const manifestId = "9668bcb5-a50b-4e39-a136-b3301305de66";
-  const catalogAppId = "0b823f54-1292-463d-a9a3-a1befc6b5e9a";
-  const teamId = "af71663c-8492-4c4a-9ac4-a3dbaa71fa7b";
   const commands: Command[] = [];
 
-  class TeamsInstallDeployment extends Deployment {
-    override async capture(command: Command): Promise<string> {
-      commands.push(command);
-      if (command.command === "az") {
-        return JSON.stringify({ value: [] });
-      }
-      return `TitleId: title-id\nAppId: ${catalogAppId}\n`;
-    }
-
+  class TeamsPackageDeployment extends Deployment {
     override async execute(command: Command): Promise<void> {
       commands.push(command);
       if (command.command === "npx" && command.args?.includes("provision")) {
@@ -619,31 +609,33 @@ test("Teams provisioning installs the generated app in its target team", async (
     }
   }
 
-  await provisionTeamsApplication(
-    new TeamsInstallDeployment({ environment: "dev" }),
+  const outputs = await provisionTeamsApplication(
+    new TeamsPackageDeployment({ environment: "dev" }),
     {
       component: "frontend",
       componentDirectory: source,
       existingAppId: manifestId,
-      teamId,
       manifestValues: { TEAMS_APP_NAME: "Test app" },
+      outputNames: ["teamsAppId"],
     },
   );
 
-  const sideload = commands.find(
-    (command) =>
-      command.command === "npx" && command.args?.includes("install"),
+  assert.deepEqual(outputs, {
+    TEAMS_APP_ID: manifestId,
+    teamsAppId: manifestId,
+  });
+  assert.equal(
+    await readFile(
+      join(
+        source,
+        "appPackage",
+        "build",
+        "appPackage.deploy-js-dev.zip",
+      ),
+      "utf8",
+    ),
+    "package",
   );
-  assert.ok(sideload);
-  assert.equal(sideload.cwd, source);
-  const graphInstall = commands.find(
-    (command) =>
-      command.command === "az" && command.args?.includes("post"),
-  );
-  assert.ok(graphInstall);
-  assert.ok(graphInstall.args?.includes(
-    `https://graph.microsoft.com/v1.0/teams/${teamId}/installedApps`,
-  ));
   const environment = await readFile(
     join(source, "env", ".env.deploy-js-dev"),
     "utf8",
@@ -651,100 +643,18 @@ test("Teams provisioning installs the generated app in its target team", async (
   const version = /^TEAMS_APP_VERSION=(\d+)\.(\d+)\.(\d+)$/m.exec(environment);
   assert.ok(version);
   assert.ok(version.slice(1).every((part) => Number(part) <= 65_535));
-});
-
-test("Teams provisioning reinstalls an app already installed in its target team", async () => {
-  const root = await mkdtemp(join(tmpdir(), "deploy-js-teams-existing-"));
-  const source = join(root, "source");
-  await mkdir(join(source, "env"), { recursive: true });
-  await mkdir(join(source, "appPackage", "build"), { recursive: true });
-  await writeFile(join(source, "teamsapp.yml"), "version: v1.7\n");
-  await writeFile(
-    join(
-      source,
-      "appPackage",
-      "build",
-      "appPackage.deploy-js-dev.zip",
-    ),
-    "package",
-  );
-  const manifestId = "9668bcb5-a50b-4e39-a136-b3301305de66";
-  const catalogAppId = "0b823f54-1292-463d-a9a3-a1befc6b5e9a";
-  const installationId = "installed-app-id";
-  const teamId = "af71663c-8492-4c4a-9ac4-a3dbaa71fa7b";
-  const commands: Command[] = [];
-
-  class ExistingTeamsDeployment extends Deployment {
-    override async capture(command: Command): Promise<string> {
-      commands.push(command);
-      if (command.command === "npx") {
-        return `TitleId: title-id\nAppId: ${catalogAppId}\n`;
-      }
-      return JSON.stringify({
-        value: [{ id: installationId, teamsApp: { externalId: manifestId } }],
-      });
-    }
-
-    override async execute(command: Command): Promise<void> {
-      commands.push(command);
-      if (command.command === "npx") {
-        await writeFile(
-          join(source, "env", ".env.deploy-js-dev"),
-          `TEAMS_APP_ID=${manifestId}\n`,
-        );
-      }
-    }
-  }
-
-  await provisionTeamsApplication(
-    new ExistingTeamsDeployment({ environment: "dev" }),
-    {
-      component: "frontend",
-      componentDirectory: source,
-      existingAppId: manifestId,
-      teamId,
-      manifestValues: { TEAMS_APP_NAME: "Test app" },
-    },
-  );
-
   assert.equal(
     commands.filter(
       (command) =>
         command.command === "npx" && command.args?.includes("install"),
     ).length,
-    1,
+    0,
   );
-  const entitlementResetIndex = commands.findIndex(
-    (command) =>
-      command.command === "npx" && command.args?.includes("uninstall"),
-  );
-  const packageInstallIndex = commands.findIndex(
-    (command) =>
-      command.command === "npx" && command.args?.includes("install"),
-  );
-  const teamDeleteIndex = commands.findIndex(
-    (command) =>
-      command.command === "az" && command.args?.includes("delete"),
-  );
-  assert.notEqual(entitlementResetIndex, -1);
-  assert.ok(entitlementResetIndex < packageInstallIndex);
-  assert.ok(packageInstallIndex < teamDeleteIndex);
   assert.equal(
     commands.filter(
-      (command) => command.command === "az" && command.args?.includes("post"),
+      (command) =>
+        command.command === "az" && command.args?.includes("upload"),
     ).length,
-    1,
-  );
-  assert.ok(
-    commands.some((command) =>
-      command.args?.includes(
-        `https://graph.microsoft.com/v1.0/teams/${teamId}/installedApps/${installationId}`,
-      )
-    ),
-  );
-  assert.ok(
-    commands.some((command) =>
-      command.command === "az" && command.args?.includes("delete")
-    ),
+    0,
   );
 });
