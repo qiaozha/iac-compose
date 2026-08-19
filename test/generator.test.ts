@@ -140,6 +140,10 @@ test("generates chatbot-style deployment code in dependency order", async () => 
   assert.match(provisioning, /new Workspace\(/);
   assert.match(provisioning, /new ApplicationInsightsComponent\(/);
   assert.match(provisioning, /applicationInsightsConnectionString/);
+  assert.doesNotMatch(
+    provisioning,
+    /Microsoft\.CognitiveServices\/accounts\/projects\/connections/,
+  );
   assert.doesNotMatch(provisioning, /new Site\(/);
   assert.match(backendProvisioning, /new Site\(/);
   assert.match(backendProvisioning, /publicNetworkAccess: "Enabled"/);
@@ -832,6 +836,50 @@ test("AI-only provisioning does not reference a missing registry", () => {
 
   assert.match(source, /new Account\(/);
   assert.doesNotMatch(source, /deploymentRegistry/);
+});
+
+test("connects hosted-agent monitoring to its Foundry project", () => {
+  const source = renderProvisioningSource({
+    requirements: {
+      schemaVersion: "1.0",
+      solution: { name: "support", enabledComponents: ["agent"] },
+      resources: [
+        {
+          id: "foundryProject",
+          kind: "ai-project",
+          requiredBy: ["agent"],
+        },
+        {
+          id: "monitoring",
+          kind: "application-monitoring",
+          requiredBy: ["agent"],
+          produces: ["applicationInsightsConnectionString"],
+        },
+      ],
+    },
+    solution: {
+      schemaVersion: "1.0",
+      components: [{ id: "agent", kind: "hosted-agent" }],
+    },
+    orderedComponents: ["agent"],
+    templates: {},
+    serviceManagementReference: "c29c71f8-2db7-4d9e-bf8b-e6b0965ecde4",
+  });
+
+  assert.match(source, /import \{ fn, Resource, Stack \}/);
+  assert.match(
+    source,
+    /new Resource\(foundryProjectProject, \{[\s\S]*?type: "Microsoft\.CognitiveServices\/accounts\/projects\/connections"/,
+  );
+  assert.match(source, /apiVersion: "2025-06-01"/);
+  assert.match(source, /category: "AppInsights"/);
+  assert.match(source, /target: monitoringInsights\.id/);
+  assert.match(source, /authType: "ApiKey"/);
+  assert.match(
+    source,
+    /key: monitoringInsights\.properties\.ConnectionString as any/,
+  );
+  assert.match(source, /ResourceId: monitoringInsights\.id/);
 });
 
 test("renders explicit model, registry, and workflow identity resources", () => {

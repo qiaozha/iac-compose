@@ -863,7 +863,7 @@ class ProvisioningSourceRenderer {
   renderBicepFiles,
   renderBicepParameterFile,
 } from "@azure/provisioning-bicep";
-import { fn, Stack } from "@azure/provisioning-core";
+import { fn, Resource, Stack } from "@azure/provisioning-core";
 import { serialize } from "@azure/provisioning-serialization";
 import {
   Account,
@@ -1217,6 +1217,19 @@ const ${base}BlobService = new BlobService(${base}Account, {});
   #renderMonitoring(): void {
     for (const resource of this.#ofKind("application-monitoring")) {
       const base = identifier(resource.id);
+      const hostedComponents = new Set(
+        resource.requiredBy.filter(
+          (component) => this.#componentKinds.get(component) === "hosted-agent",
+        ),
+      );
+      const foundryProjects = this.#resources.filter(
+        (candidate) =>
+          candidate.kind === "ai-project" &&
+          candidate.requiredBy.some((component) => hostedComponents.has(component)),
+      );
+      for (const project of foundryProjects) {
+        if (!this.#owns(project)) this.#ensureExistingResource(project);
+      }
       this.#sections.push(`const ${base}Workspace = new Workspace(stack, {
   name: fn.concat(${JSON.stringify(hyphenatedPrefix(this.#solutionName(), `${resource.id}-logs`, 55))}, suffix),
   location,
@@ -1235,6 +1248,28 @@ const ${base}Insights = new ApplicationInsightsComponent(stack, {
     WorkspaceResourceId: ${base}Workspace.id as any,
   },
 });
+
+${foundryProjects.map((project) => {
+  const projectBase = identifier(project.id);
+  return `new Resource(${projectBase}Project, {
+  type: "Microsoft.CognitiveServices/accounts/projects/connections",
+  apiVersion: "2025-06-01",
+  name: fn.concat(${JSON.stringify(hyphenatedPrefix(this.#solutionName(), `${resource.id}-${project.id}-appinsights`, 25))}, suffix),
+  properties: {
+    category: "AppInsights",
+    target: ${base}Insights.id,
+    authType: "ApiKey",
+    isSharedToAll: true,
+    credentials: {
+      key: ${base}Insights.properties.ConnectionString as any,
+    },
+    metadata: {
+      ApiType: "Azure",
+      ResourceId: ${base}Insights.id,
+    },
+  },
+});`;
+}).join("\n\n")}
 `);
       this.#outputs.set(
         implementationOutput(resource.id, "NAME"),
