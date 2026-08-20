@@ -83,14 +83,14 @@ export {
   type ResourceRequirementsValidationResult,
   type ResourceValidationPlan,
   type ValidateResourceRequirementsOptions,
-} from "./resource-validation.js";
+} from "./validation/resources/index.js";
 export {
   renderResourceRequirements,
   type RenderedProvisioningFile,
   type RenderResourceRequirementsOptions,
   type ResourceContract,
   type ResourceContractRequirement,
-} from "./resource-contract.js";
+} from "./generation/resources/index.js";
 export {
   createHostedAgentManifest,
   deployHostedAgentService,
@@ -108,7 +108,7 @@ export {
   type HostedAgentDeploymentOptions,
   type TeamsApplicationDeploymentOptions,
   type WorkflowDeploymentOptions,
-} from "./resource-runtime.js";
+} from "./runtime/resources/index.js";
 
 export interface Command {
   command: string;

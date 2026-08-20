@@ -14,7 +14,7 @@ import {
   provisioningDependencies,
   renderEntraIdentityConfigurationSource,
   renderProvisioningSource,
-} from "../src/provisioning-source.js";
+} from "../src/generation/provisioning/index.js";
 
 const execFileAsync = promisify(execFile);
 
