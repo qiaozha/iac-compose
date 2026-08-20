@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { createDeployment } from "../src/index.js";
-import { renderResourceRequirements } from "../src/resource-contract.js";
+import { renderResourceRequirements } from "../src/generation/resources/index.js";
 import {
   appConfigurationKeySetArgs,
   createHostedAgentManifest,
@@ -15,7 +15,7 @@ import {
   prepareResourceRequirements,
   resolveOutputBindings,
   teamsEnvironmentName,
-} from "../src/resource-runtime.js";
+} from "../src/runtime/resources/index.js";
 
 test("updates hosted-agent configuration through App Configuration data plane", () => {
   assert.deepEqual(

@@ -10,7 +10,7 @@ import { Deployment, type Command } from "../src/index.js";
 import {
   planResourceValidation,
   validateResourceRequirements,
-} from "../src/resource-validation.js";
+} from "../src/validation/resources/index.js";
 
 const execFileAsync = promisify(execFile);
 
