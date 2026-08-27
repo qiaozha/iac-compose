@@ -2,7 +2,7 @@ import {
   captureAzure,
   type Deployment,
   waitForHttp,
-} from "imperative-deploy";
+} from "iac-compose";
 import {
   optionalEnv,
   persistEnvironment,
@@ -296,6 +296,6 @@ async function requireTeamsConnectionConsent(
     `Teams API connection '${connectionName}' requires interactive OAuth consent ` +
       `(current status: '${status || "NotConnected"}'). Open ${portalUrl}, authorize the ` +
       `connection with an account from Teams tenant '${teamsTenantId}', then rerun ` +
-      "deploy-js; completed lifecycle steps are idempotent.",
+      "iac-compose; completed lifecycle steps are idempotent.",
   );
 }

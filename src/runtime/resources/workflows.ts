@@ -134,7 +134,7 @@ async function requireAuthorizedConnection(
     `API connection '${connectionName}' requires interactive consent ` +
       `(current status: '${status || "NotConnected"}'). Open ` +
       `https://portal.azure.com/#@${tenant}/resource${resourceId}/edit, ` +
-      `authorize the connection${authorizationAccount}, then rerun deploy-js.`,
+      `authorize the connection${authorizationAccount}, then rerun iac-compose.`,
   );
 }
 

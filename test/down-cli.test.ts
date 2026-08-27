@@ -6,12 +6,12 @@ import { promisify } from "node:util";
 import { execFile } from "node:child_process";
 import { test } from "node:test";
 
-import { deployJsAzdTemplate } from "../src/index.js";
+import { iacComposeAzdTemplate } from "../src/index.js";
 
 const execFileAsync = promisify(execFile);
 
 test("down only deletes a marked generated project with explicit confirmation", async () => {
-  const root = await mkdtemp(join(tmpdir(), "deploy-js-down-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-compose-down-"));
   const projectDirectory = join(root, ".generated");
   const bin = join(root, "bin");
   const log = join(root, "azd.log");
@@ -20,8 +20,8 @@ test("down only deletes a marked generated project with explicit confirmation", 
   await writeFile(
     join(projectDirectory, "azure.yaml"),
     JSON.stringify({
-      name: "imperative-deploy-test",
-      metadata: { template: deployJsAzdTemplate },
+      name: "iac-compose-test",
+      metadata: { template: iacComposeAzdTemplate },
       infra: {
         provider: "bicep",
         layers: [{ name: "shared", path: "./shared" }],
@@ -32,7 +32,7 @@ test("down only deletes a marked generated project with explicit confirmation", 
   await writeFile(
     fakeAzd,
     `#!/bin/sh
-printf '%s\n' "$*" >> "$DEPLOY_JS_AZD_LOG"
+printf '%s\n' "$*" >> "$IAC_COMPOSE_AZD_LOG"
 `,
   );
   await chmod(fakeAzd, 0o755);
@@ -41,7 +41,7 @@ printf '%s\n' "$*" >> "$DEPLOY_JS_AZD_LOG"
   const environment = {
     ...process.env,
     PATH: `${bin}:${process.env.PATH ?? ""}`,
-    DEPLOY_JS_AZD_LOG: log,
+    IAC_COMPOSE_AZD_LOG: log,
   };
   await assert.rejects(
     execFileAsync(process.execPath, [cli, "down", projectDirectory, "-e", "dev"], {
@@ -62,7 +62,7 @@ printf '%s\n' "$*" >> "$DEPLOY_JS_AZD_LOG"
 });
 
 test("down refuses an unmarked azd project", async () => {
-  const root = await mkdtemp(join(tmpdir(), "deploy-js-down-unmarked-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-compose-down-unmarked-"));
   await writeFile(join(root, "azure.yaml"), JSON.stringify({ name: "other" }));
 
   await assert.rejects(
@@ -71,5 +71,28 @@ test("down refuses an unmarked azd project", async () => {
       [resolve("dist/cli.js"), "down", root, "-e", "dev", "--force"],
     ),
     /Refusing cleanup/,
+  );
+});
+
+test("down rejects a legacy imperative-deploy project with regeneration guidance", async () => {
+  const root = await mkdtemp(join(tmpdir(), "iac-compose-down-legacy-"));
+  await writeFile(
+    join(root, "azure.yaml"),
+    JSON.stringify({
+      name: "legacy",
+      metadata: { template: "imperative-deploy@1.0.0" },
+      infra: {
+        provider: "bicep",
+        layers: [{ name: "shared", path: "./shared" }],
+      },
+    }),
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [resolve("dist/cli.js"), "down", root, "-e", "dev", "--force"],
+    ),
+    /legacy imperative-deploy project.*Regenerate it with iac-compose/s,
   );
 });

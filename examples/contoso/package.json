@@ -6,7 +6,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "imperative-deploy": "file:../..",
+    "iac-compose": "file:../..",
     "@azure/provisioning-appconfiguration": "file:../../vendor/azure-provisioning-appconfiguration-0.1.0.tgz",
     "@azure/provisioning-applicationinsights": "file:../../vendor/azure-provisioning-applicationinsights-0.1.0.tgz",
     "@azure/provisioning-appservice": "file:../../vendor/azure-provisioning-appservice-0.1.0.tgz",

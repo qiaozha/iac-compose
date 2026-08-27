@@ -19,7 +19,7 @@ import {
 } from "../src/index.js";
 
 test("dry run renders provision artifacts without running deployment actions", async () => {
-  const root = await mkdtemp(join(tmpdir(), "deploy-js-dry-run-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-compose-dry-run-"));
   const entrypoint = join(root, "infra.ts");
   const outputDirectory = join(root, "generated");
   await writeFile(
@@ -62,11 +62,11 @@ test("dry run renders provision artifacts without running deployment actions", a
     },
   );
   assert.deepEqual(messages, [
-    "[deploy-js] DRY env: prepare shared values",
-    "[deploy-js] DRY provision: chatbot resources",
-    "[deploy-js] $ azd provision --environment dev --no-prompt",
-    "[deploy-js] DRY deploy: function app",
-    "[deploy-js] DRY command: patch logic workflow",
+    "[iac-compose] DRY env: prepare shared values",
+    "[iac-compose] DRY provision: chatbot resources",
+    "[iac-compose] $ azd provision --environment dev --no-prompt",
+    "[iac-compose] DRY deploy: function app",
+    "[iac-compose] DRY command: patch logic workflow",
   ]);
   assert.equal(messages.some((message) => message.includes("env new")), false);
 });
@@ -646,7 +646,7 @@ test("App Service private networking preserves an existing configuration", async
 });
 
 test("Teams provisioning uses the component-authored lifecycle", async () => {
-  const root = await mkdtemp(join(tmpdir(), "deploy-js-teams-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-compose-teams-"));
   const source = join(root, "source");
   await mkdir(join(source, "env"), { recursive: true });
   const sourceLifecycle = `version: v1.7
@@ -660,7 +660,7 @@ provision:
     override async execute(command: Command): Promise<void> {
       assert.equal(command.cwd, source);
       assert.equal(await readFile(join(source, "teamsapp.yml"), "utf8"), sourceLifecycle);
-      const environmentFile = join(source, "env", ".env.deploy-js-dev");
+      const environmentFile = join(source, "env", ".env.iac-compose-dev");
       assert.match(
         await readFile(environmentFile, "utf8"),
         /TEAMS_APP_ID=existing-app-id/,
@@ -695,7 +695,7 @@ provision:
 });
 
 test("Teams provisioning leaves the generated app package for publication", async () => {
-  const root = await mkdtemp(join(tmpdir(), "deploy-js-teams-package-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-compose-teams-package-"));
   const source = join(root, "source");
   await mkdir(join(source, "env"), { recursive: true });
   await mkdir(join(source, "appPackage", "build"), { recursive: true });
@@ -705,7 +705,7 @@ test("Teams provisioning leaves the generated app package for publication", asyn
       source,
       "appPackage",
       "build",
-      "appPackage.deploy-js-dev.zip",
+      "appPackage.iac-compose-dev.zip",
     ),
     "package",
   );
@@ -719,7 +719,7 @@ test("Teams provisioning leaves the generated app package for publication", asyn
         const environmentFile = join(
           source,
           "env",
-          ".env.deploy-js-dev",
+          ".env.iac-compose-dev",
         );
         await writeFile(
           environmentFile,
@@ -750,14 +750,14 @@ test("Teams provisioning leaves the generated app package for publication", asyn
         source,
         "appPackage",
         "build",
-        "appPackage.deploy-js-dev.zip",
+        "appPackage.iac-compose-dev.zip",
       ),
       "utf8",
     ),
     "package",
   );
   const environment = await readFile(
-    join(source, "env", ".env.deploy-js-dev"),
+    join(source, "env", ".env.iac-compose-dev"),
     "utf8",
   );
   const version = /^TEAMS_APP_VERSION=(\d+)\.(\d+)\.(\d+)$/m.exec(environment);

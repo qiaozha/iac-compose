@@ -1,5 +1,5 @@
 {
-  "name": "imperative-deploy-chatbot-example",
+  "name": "iac-compose-chatbot-example",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -23,6 +23,6 @@
     "@azure/provisioning-serialization": "https://github.com/Azure/js-provisioning-lib/releases/download/%40azure/provisioning-serialization%400.1.0/azure-provisioning-serialization-0.1.0.tgz",
     "@azure/provisioning-serialization-ast": "https://github.com/Azure/js-provisioning-lib/releases/download/%40azure/provisioning-serialization-ast%400.1.0/azure-provisioning-serialization-ast-0.1.0.tgz",
     "@azure/provisioning-storage": "https://github.com/Azure/js-provisioning-lib/releases/download/%40azure/provisioning-storage%400.1.0/azure-provisioning-storage-0.1.0.tgz",
-    "imperative-deploy": "file:../.."
+    "iac-compose": "file:../.."
   }
 }

@@ -1,5 +1,5 @@
 dist/
 node_modules/
-.deploy-js-generated.json
+.iac-compose-generated.json
 examples/chatbot/.generated/
 examples/contoso/.generated/

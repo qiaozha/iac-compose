@@ -1,6 +1,6 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ProvisioningLayer } from "imperative-deploy";
+import type { ProvisioningLayer } from "iac-compose";
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const exampleRoot = resolve(sourceRoot, "..");

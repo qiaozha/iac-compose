@@ -8,7 +8,7 @@ export function renderDeploymentSource(
   solutionName: string,
 ): string {
   const imports = [
-    'import { defineDeployment, type Deployment } from "imperative-deploy";',
+    'import { defineDeployment, type Deployment } from "iac-compose";',
     ...components.map(
       (component) =>
         `import { ${names.get(component)} } from "./components/${component}/index.js";`,
@@ -63,7 +63,7 @@ export function renderRuntimePathsSource(
     .join("\n");
   return `import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ProvisioningLayer } from "imperative-deploy";
+import type { ProvisioningLayer } from "iac-compose";
 
 export const deploymentRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const packageRoot = resolve(deploymentRoot, ${JSON.stringify(packagePath.split(sep).join("/"))});
@@ -102,7 +102,7 @@ import {
   stringEnvironment,
   type Deployment,
   type EnvironmentValues,
-} from "imperative-deploy";
+} from "iac-compose";
 import { environmentRoot, generatedRoot } from "./paths.js";
 
 export { requiredEnv, type EnvironmentValues };
@@ -195,7 +195,7 @@ export function renderSharedComponentSource(
   ensureDeploymentPrincipalRoles,
   ensureResourceGroup,
   type Deployment,
-} from "imperative-deploy";
+} from "iac-compose";
 import { persistEnvironment, requiredEnv } from "../../runtime/environment.js";
 import {
   generatedSharedLayer,
@@ -242,5 +242,5 @@ function generatedAzdProjectName(solutionName: string): string {
     .replace(/[^a-z0-9-]+/g, "-")
     .replace(/-{2,}/g, "-")
     .replace(/^-|-$/g, "");
-  return `imperative-deploy-${normalized || "app"}`;
+  return `iac-compose-${normalized || "app"}`;
 }

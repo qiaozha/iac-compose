@@ -1,6 +1,6 @@
-# imperative-deploy
+# iac-compose
 
-`deploy-js` runs TypeScript or JavaScript deployment programs in authored order.
+`iac-compose` runs TypeScript or JavaScript deployment programs in authored order.
 Customer deployment programs do not need an azd project or azd hooks.
 
 The runtime requires Node.js 20.6 or newer and generates isolated, hook-free azd
@@ -10,7 +10,7 @@ deployment to `azd provision`, and exposes `AzdProject` for `azd deploy` service
 targets while JavaScript retains lifecycle ordering.
 
 ```ts
-import { defineDeployment } from "imperative-deploy";
+import { defineDeployment } from "iac-compose";
 
 export default defineDeployment(async (deployment) => {
   const outputs = await deployment.provision("infrastructure", {
@@ -32,18 +32,18 @@ export default defineDeployment(async (deployment) => {
 ```bash
 npm install
 npm run build
-npm run deploy-js -- run ./deployment.ts --environment dev
-npm run deploy-js -- run ./deployment.ts --environment dev --dry-run
+npm run iac-compose -- ./deployment.ts --environment dev
+npm run iac-compose -- ./deployment.ts --environment dev --dry-run
 ```
 
 ## Validate deployment access
 
-`deploy-js validate` checks that every Azure resource provider used by the
+`iac-compose validate` checks that every Azure resource provider used by the
 generator is registered and that the deployment principal has the minimum
 roles needed for generated data operations at the target scope:
 
 ```bash
-deploy-js validate \
+iac-compose validate \
   --resources ./package/config/resource-requirements.json \
   --subscription <subscription-id> \
   --resource-group <resource-group>
@@ -56,7 +56,7 @@ when the solution deploys a hosted Foundry agent. Missing providers or roles
 make the command fail. Add `--grant` to assign missing roles at the target scope:
 
 ```bash
-deploy-js validate \
+iac-compose validate \
   --resources ./package/config/resource-requirements.json \
   --resource-group <resource-group> \
   --grant
@@ -74,11 +74,11 @@ roles before provisioning resources.
 
 ## Generate deployment code
 
-`deploy-js generate` turns a solution plan and its resource requirements into a
+`iac-compose generate` turns a solution plan and its resource requirements into a
 chatbot-style TypeScript deployment program:
 
 ```bash
-deploy-js generate \
+iac-compose generate \
   --resources ./package/config/generated/resource-requirements.json \
   --solution ./package/solution.json \
   --output ./package/deployment
@@ -172,11 +172,11 @@ creates placeholder workflows disabled; the lifecycle refuses to enable one
 until all placeholder values are replaced.
 
 Regeneration only removes files listed in
-`deployment/.deploy-js-codegen.json`, preserving files created separately in
+`deployment/.iac-compose-codegen.json`, preserving files created separately in
 the output directory. Generated code can live outside this package's dependency
-tree: `deploy-js run` resolves its `imperative-deploy` imports to the running
+tree: `iac-compose` resolves its generated `iac-compose` imports to the running
 CLI package. Directly importing or compiling generated source still requires an
-`imperative-deploy` dependency in the customer package.
+`iac-compose` dependency in the customer package.
 
 Programmatic callers can observe generation phase boundaries without parsing
 CLI text:
@@ -194,7 +194,7 @@ await generateDeploymentCode({
 
 Generation reports `loadingInputs`, `validatingContracts`,
 `planningComponents`, `renderingSources`, `writingFiles`, and `completed` in
-order. The CLI renders the same events as `[deploy-js] GENERATE` lines. The
+order. The CLI renders the same events as `[iac-compose] GENERATE` lines. The
 callback may be asynchronous; if it rejects, generation stops and propagates
 the error to the caller.
 
@@ -209,16 +209,16 @@ npm run --prefix ./package/deployment typecheck
 Run or inspect the result with:
 
 ```bash
-deploy-js run ./package/deployment/deploy.ts --environment dev --dry-run
-deploy-js run ./package/deployment/deploy.ts --environment dev
-deploy-js run ./package/deployment/deploy.ts --environment dev --component frontend
+iac-compose ./package/deployment/deploy.ts --environment dev --dry-run
+iac-compose ./package/deployment/deploy.ts --environment dev
+iac-compose ./package/deployment/deploy.ts --environment dev --component frontend
 ```
 
 `--dry-run` renders provisioning entrypoints and writes their generated Bicep,
 parameter files, and one `.generated/azure.yaml`. It does not initialize azd
 environments, run cloud commands, or execute application deployment callbacks.
 Each provisioning component is a named Bicep layer whose files remain under
-`.generated/<component>/`. `deploy-js` preserves authored lifecycle ordering by
+`.generated/<component>/`. `iac-compose` preserves authored lifecycle ordering by
 running `azd provision <layer>` at each provisioning step. Infrastructure layers
 and deployable services share the single `.generated/.azure` environment.
 Generated runtime paths expose one `generated<Component>Layer` descriptor, so a
@@ -234,10 +234,10 @@ configure that shared instance instead of constructing a project per component.
 Delete all resources tracked by that generated project with:
 
 ```bash
-deploy-js down ./package/deployment/.generated --environment dev --force
+iac-compose down ./package/deployment/.generated --environment dev --force
 ```
 
-Cleanup requires an explicit environment, `--force`, and deploy-js ownership
+Cleanup requires an explicit environment, `--force`, and iac-compose ownership
 metadata in `azure.yaml`; it refuses arbitrary azd project directories. Add
 `--purge` to permanently remove resources that Azure otherwise soft-deletes.
 
@@ -264,7 +264,7 @@ await deployment.provision("resources", {
 ```
 
 The runtime records all layered artifact paths in the single
-`.generated/.deploy-js-generated.json` manifest and only replaces files under
+`.generated/.iac-compose-generated.json` manifest and only replaces files under
 the layer being regenerated. Existing per-layer manifests are migrated into
 that root manifest. Standalone provisioning keeps its manifest in its output
 directory. Layered provisioning merges a JSON-compatible
@@ -291,7 +291,7 @@ package's `vendor/` directory, so deployment workers do not require GitHub
 credentials when installing generated dependencies.
 
 The chatbot consumes this tool through the relative
-`imperative-deploy: file:../..` package dependency and imports only the package
+`iac-compose: file:../..` package dependency and imports only the package
 export, never the root `src` directory.
 
 [examples/chatbot/src/deploy.ts](examples/chatbot/src/deploy.ts) is the centralized
@@ -337,7 +337,7 @@ All implementation is grouped under
 - `runtime/` contains only chatbot-specific environment composition and paths.
   Azure CLI execution, retries, readiness checks, azd App Service and Function
   deployment, RBAC, resource-group creation, account lookup, and environment-file
-  primitives are exported by `imperative-deploy` itself.
+  primitives are exported by `iac-compose` itself.
 
 Deployment outputs and lifecycle values are stored in the shared azd environment
 under `examples/chatbot/.generated/.azure/`. Non-secret environment inputs live
@@ -366,10 +366,10 @@ the connection and rerun; the next component provision includes the complete
 workflow, and completed lifecycle functions are idempotent.
 
 ```bash
-npm run deploy-js -- run examples/chatbot/src/deploy.ts -e dev --dry-run
-npm run deploy-js -- run examples/chatbot/src/deploy.ts -e dev
-npm run deploy-js -- run examples/chatbot/src/deploy.ts -e dev --component logic-app
-npm run deploy-js -- down examples/chatbot/.generated -e dev --force
+npm run iac-compose -- examples/chatbot/src/deploy.ts -e dev --dry-run
+npm run iac-compose -- examples/chatbot/src/deploy.ts -e dev
+npm run iac-compose -- examples/chatbot/src/deploy.ts -e dev --component logic-app
+npm run iac-compose -- down examples/chatbot/.generated -e dev --force
 ```
 
 The chatbot component names are `shared`, `agent`, `agent-server`,

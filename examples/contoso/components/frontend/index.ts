@@ -8,7 +8,7 @@ import {
   provisionTeamsApplication,
   type Deployment,
   waitForAppServiceReady,
-} from "imperative-deploy";
+} from "iac-compose";
 import {
   persistEnvironment,
   requiredEnv,

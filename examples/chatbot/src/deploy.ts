@@ -1,4 +1,4 @@
-import { defineDeployment, type Deployment } from "imperative-deploy";
+import { defineDeployment, type Deployment } from "iac-compose";
 import { agent } from "./components/agent/index.js";
 import { agentServer } from "./components/agent-server/index.js";
 import { frontend } from "./components/frontend/index.js";

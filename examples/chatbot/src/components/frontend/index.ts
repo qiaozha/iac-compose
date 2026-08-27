@@ -6,7 +6,7 @@ import {
   prepareAppServiceContainer,
   type Deployment,
   waitForHttp,
-} from "imperative-deploy";
+} from "iac-compose";
 import {
   optionalEnv,
   persistEnvironment,
@@ -19,7 +19,7 @@ import {
 } from "../../runtime/paths.js";
 import { ensureFrontendAccessRestrictions } from "../shared/frontend-access.js";
 
-const teamsEnvironment = "deploy-js";
+const teamsEnvironment = "iac-compose";
 
 export async function frontend(deployment: Deployment): Promise<void> {
   const outputs = await deployment.provision("Teams bot frontend infrastructure", {

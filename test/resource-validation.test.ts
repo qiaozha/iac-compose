@@ -221,7 +221,7 @@ test("validates inherited roles and grants only missing deployment access", asyn
 });
 
 test("validate CLI reports access and grants missing roles explicitly", async () => {
-  const root = await mkdtemp(join(tmpdir(), "deploy-js-validate-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-compose-validate-"));
   const bin = join(root, "bin");
   const log = join(root, "az.log");
   const resourcesFile = join(root, "resource-requirements.json");
@@ -247,11 +247,11 @@ test("validate CLI reports access and grants missing roles explicitly", async ()
   await writeFile(
     fakeAzure,
     `#!/bin/sh
-printf '%s\n' "$*" >> "$DEPLOY_JS_AZ_LOG"
+printf '%s\n' "$*" >> "$IAC_COMPOSE_AZ_LOG"
 if [ "$1 $2" = "account show" ]; then printf 'tenant-id\n'; exit 0; fi
 if [ "$1 $2" = "provider show" ]; then printf 'Registered\n'; exit 0; fi
 if [ "$1 $2 $3" = "role assignment list" ]; then
-  if [ "$DEPLOY_JS_ROLE_MISSING" = "1" ]; then exit 0; fi
+  if [ "$IAC_COMPOSE_ROLE_MISSING" = "1" ]; then exit 0; fi
   printf 'assignment-id\n'
   exit 0
 fi
@@ -262,7 +262,7 @@ exit 0
   const environment = {
     ...process.env,
     PATH: `${bin}:${process.env.PATH ?? ""}`,
-    DEPLOY_JS_AZ_LOG: log,
+    IAC_COMPOSE_AZ_LOG: log,
   };
   const args = [
     resolve("dist/cli.js"),
@@ -290,7 +290,7 @@ exit 0
   assert.match(validated.stdout, /validated deployment principal principal-id/);
 
   const granted = await execFileAsync(process.execPath, [...args, "--grant"], {
-    env: { ...environment, DEPLOY_JS_ROLE_MISSING: "1" },
+    env: { ...environment, IAC_COMPOSE_ROLE_MISSING: "1" },
   });
   assert.match(granted.stdout, /role App Configuration Data Owner: granted/);
   assert.match(

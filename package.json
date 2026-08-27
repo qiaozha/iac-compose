@@ -1,10 +1,10 @@
 {
-  "name": "imperative-deploy",
+  "name": "iac-compose",
   "version": "0.1.0",
-  "description": "Run JavaScript-defined Azure provisioning and application lifecycles in imperative order.",
+  "description": "Compose TypeScript or JavaScript infrastructure and application deployment through azd in authored order.",
   "type": "module",
   "bin": {
-    "deploy-js": "dist/cli.js"
+    "iac-compose": "dist/cli.js"
   },
   "exports": {
     ".": {
@@ -18,7 +18,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "deploy-js": "tsx src/cli.ts",
+    "iac-compose": "tsx src/cli.ts",
     "pretest": "npm run build",
     "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"

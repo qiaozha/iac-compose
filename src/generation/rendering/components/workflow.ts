@@ -90,7 +90,7 @@ export function renderWorkflowComponentSource(
   enableWorkflowDeployment,
   prepareAuthorizedConnection,
   type Deployment,
-} from "imperative-deploy";
+} from "iac-compose";
 import {
   persistEnvironment,
   requiredEnv,

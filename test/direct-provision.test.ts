@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { createDeployment } from "../src/index.js";
 
 test("provision compiles JavaScript infrastructure and delegates deployment to azd", async () => {
-  const root = await mkdtemp(join(tmpdir(), "deploy-js-provision-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-compose-provision-"));
   const bin = join(root, "bin");
   const invocation = join(root, "invocation.txt");
   const entrypoint = join(root, "infra.ts");
@@ -23,13 +23,13 @@ test("provision compiles JavaScript infrastructure and delegates deployment to a
   await writeFile(
     fakeAzd,
     `#!/bin/sh
-printf '%s\n' "$*" >> "$DEPLOY_JS_INVOCATION"
+printf '%s\n' "$*" >> "$IAC_COMPOSE_INVOCATION"
 if [ "$1 $2" = "env new" ]; then
   mkdir -p ".azure/$3"
   printf '{}\n' > ".azure/$3/config.json"
 fi
 if [ "$1 $2 $3" = "env set --file" ]; then
-  sed 's/^/env-value /' "$4" >> "$DEPLOY_JS_INVOCATION"
+  sed 's/^/env-value /' "$4" >> "$IAC_COMPOSE_INVOCATION"
 fi
 if [ "$1 $2" = "env get-values" ]; then
   printf '%s\n' 'AZURE_RESOURCE_GROUP="rg-test"'
@@ -39,9 +39,9 @@ fi
   await chmod(fakeAzd, 0o755);
 
   const previousPath = process.env.PATH;
-  const previousInvocation = process.env.DEPLOY_JS_INVOCATION;
+  const previousInvocation = process.env.IAC_COMPOSE_INVOCATION;
   process.env.PATH = `${bin}:${previousPath ?? ""}`;
-  process.env.DEPLOY_JS_INVOCATION = invocation;
+  process.env.IAC_COMPOSE_INVOCATION = invocation;
   try {
     const deployment = createDeployment({
       projectDirectory: root,
@@ -77,13 +77,13 @@ fi
     );
   } finally {
     process.env.PATH = previousPath;
-    if (previousInvocation === undefined) delete process.env.DEPLOY_JS_INVOCATION;
-    else process.env.DEPLOY_JS_INVOCATION = previousInvocation;
+    if (previousInvocation === undefined) delete process.env.IAC_COMPOSE_INVOCATION;
+    else process.env.IAC_COMPOSE_INVOCATION = previousInvocation;
   }
 });
 
 test("a component can own a resource-group-scoped provision step", async () => {
-  const root = await mkdtemp(join(tmpdir(), "deploy-js-component-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-compose-component-"));
   const bin = join(root, "bin");
   const invocation = join(root, "invocation.txt");
   const entrypoint = join(root, "component.ts");
@@ -99,22 +99,22 @@ test("a component can own a resource-group-scoped provision step", async () => {
   await writeFile(
     fakeAzd,
     `#!/bin/sh
-printf '%s\n' "$*" >> "$DEPLOY_JS_INVOCATION"
+printf '%s\n' "$*" >> "$IAC_COMPOSE_INVOCATION"
 if [ "$1 $2" = "env new" ]; then
   mkdir -p ".azure/$3"
   printf '{}\n' > ".azure/$3/config.json"
 fi
 if [ "$1 $2 $3" = "env set --file" ]; then
-  sed 's/^/env-value /' "$4" >> "$DEPLOY_JS_INVOCATION"
+  sed 's/^/env-value /' "$4" >> "$IAC_COMPOSE_INVOCATION"
 fi
 `,
   );
   await chmod(fakeAzd, 0o755);
 
   const previousPath = process.env.PATH;
-  const previousInvocation = process.env.DEPLOY_JS_INVOCATION;
+  const previousInvocation = process.env.IAC_COMPOSE_INVOCATION;
   process.env.PATH = `${bin}:${previousPath ?? ""}`;
-  process.env.DEPLOY_JS_INVOCATION = invocation;
+  process.env.IAC_COMPOSE_INVOCATION = invocation;
   try {
     const deployment = createDeployment({ projectDirectory: root, log: () => {} });
     await deployment.provision("component resources", {
@@ -142,7 +142,7 @@ fi
     );
   } finally {
     process.env.PATH = previousPath;
-    if (previousInvocation === undefined) delete process.env.DEPLOY_JS_INVOCATION;
-    else process.env.DEPLOY_JS_INVOCATION = previousInvocation;
+    if (previousInvocation === undefined) delete process.env.IAC_COMPOSE_INVOCATION;
+    else process.env.IAC_COMPOSE_INVOCATION = previousInvocation;
   }
 });

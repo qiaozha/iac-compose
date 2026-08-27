@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import {
   deployHostedAgentService,
   type Deployment,
-} from "imperative-deploy";
+} from "iac-compose";
 import {
   persistEnvironment,
   requiredEnv,

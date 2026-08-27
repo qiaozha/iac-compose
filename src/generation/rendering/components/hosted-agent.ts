@@ -77,7 +77,7 @@ export function renderHostedAgentComponentSource(
 import {
   deployHostedAgentService,
   type Deployment,
-} from "imperative-deploy";
+} from "iac-compose";
 import {
   persistEnvironment,
   requiredEnv,

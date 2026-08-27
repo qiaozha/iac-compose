@@ -4,7 +4,7 @@ import {
   getAzdProject,
   ensureRoleAssignment,
   type Deployment,
-} from "imperative-deploy";
+} from "iac-compose";
 import {
   persistEnvironment,
   requiredEnv,
