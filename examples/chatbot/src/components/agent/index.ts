@@ -13,6 +13,7 @@ import {
   agentRoot,
   agentProvisioningEntrypoint,
   generatedAgentProject,
+  generatedRoot,
 } from "../../runtime/paths.js";
 import {
   seedRuntimeConfiguration,
@@ -34,6 +35,9 @@ export async function agent(deployment: Deployment): Promise<void> {
   const outputs = await deployment.provision("Foundry agent infrastructure", {
     entrypoint: agentProvisioningEntrypoint,
     outputDirectory: generatedAgentProject,
+    azdProjectDirectory: generatedRoot,
+    layer: "agent",
+    dependsOn: ["shared"],
     deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-agent`,
     scope: "resourceGroup",
     resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
@@ -46,7 +50,7 @@ export async function agent(deployment: Deployment): Promise<void> {
   await deployment.deploy(
     "persist, configure, and seed agent infrastructure",
     async () => {
-      await persistEnvironment(requiredEnv("AZURE_ENV_NAME"), outputs);
+      await persistEnvironment(deployment, outputs);
       await ensureAgentServerFoundryAccess(deployment);
       await configureServerApplication(deployment);
       await seedRuntimeConfiguration(deployment);
@@ -55,7 +59,7 @@ export async function agent(deployment: Deployment): Promise<void> {
 
   if (deployment.dryRun) {
     const project = createAzdProject(deployment, {
-      directory: generatedAgentProject,
+      directory: generatedRoot,
       mergeManifest: true,
       manifest: createAgentAzdManifest({
         dockerfile: resolve(agentRoot, "agents/chat_agent/Dockerfile"),
@@ -67,7 +71,7 @@ export async function agent(deployment: Deployment): Promise<void> {
 
   await deployment.deploy("hosted Foundry agent", async () => {
     const project = createAzdProject(deployment, {
-      directory: generatedAgentProject,
+      directory: generatedRoot,
       mergeManifest: true,
       manifest: createAgentAzdManifest({
         dockerfile: resolve(agentRoot, "agents/chat_agent/Dockerfile"),
@@ -111,7 +115,7 @@ export async function agent(deployment: Deployment): Promise<void> {
       ),
     };
     const image = values.SERVICE_AGENT_IMAGE_NAME?.trim();
-    await persistEnvironment(requiredEnv("AZURE_ENV_NAME"), {
+    await persistEnvironment(deployment, {
       ...persisted,
       ...(image ? { SERVICE_AGENT_IMAGE_NAME: image } : {}),
     });

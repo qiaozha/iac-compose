@@ -195,7 +195,10 @@ export async function generateDeploymentCode(
       ...provisioningSources.keys(),
     ], hasEntra),
   );
-  files.set("runtime/environment.ts", renderRuntimeEnvironmentSource());
+  files.set(
+    "runtime/environment.ts",
+    renderRuntimeEnvironmentSource(requirements.solution.name),
+  );
   for (const [owner, source] of provisioningSources) {
     files.set(`components/${owner}/provisioning.ts`, source);
   }

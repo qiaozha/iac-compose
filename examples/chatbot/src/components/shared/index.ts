@@ -6,6 +6,7 @@ import {
 import { persistEnvironment, requiredEnv } from "../../runtime/environment.js";
 import { ensureServerApplication } from "./identity.js";
 import {
+  generatedRoot,
   generatedSharedProject,
   sharedProvisioningEntrypoint,
 } from "../../runtime/paths.js";
@@ -23,7 +24,7 @@ export async function shared(deployment: Deployment): Promise<void> {
       location: requiredEnv("AZURE_LOCATION"),
       subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
     });
-    await persistEnvironment(environment, {
+    await persistEnvironment(deployment, {
       AZURE_RESOURCE_GROUP: resourceGroup,
     });
   });
@@ -37,6 +38,9 @@ export async function shared(deployment: Deployment): Promise<void> {
   const outputs = await deployment.provision("shared chatbot infrastructure", {
     entrypoint: sharedProvisioningEntrypoint,
     outputDirectory: generatedSharedProject,
+    azdProjectDirectory: generatedRoot,
+    layer: "shared",
+    dependsOn: ["identity"],
     deploymentName: `${environment}-shared`,
     scope: "resourceGroup",
     resourceGroup,
@@ -46,7 +50,7 @@ export async function shared(deployment: Deployment): Promise<void> {
 
   await deployment.deploy("persist shared resource outputs", async () => {
     await persistEnvironment(
-      requiredEnv("AZURE_ENV_NAME"),
+      deployment,
       normalizeOutputs(outputs),
     );
   });

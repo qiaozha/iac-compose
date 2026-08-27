@@ -6,12 +6,13 @@ import { test } from "node:test";
 
 import { createDeployment } from "../src/index.js";
 
-test("dry run generates Bicep and azd manifests for multiple components", async () => {
+test("dry run generates layered Bicep in one azd project", async () => {
   const outputRoot = await mkdtemp(join(tmpdir(), "deploy-js-components-"));
+  const messages: string[] = [];
   const deployment = createDeployment({
     dryRun: true,
     environment: "dev",
-    log: () => {},
+    log: (message) => messages.push(message),
   });
   for (const component of ["shared", "agent", "frontend"]) {
     const outputDirectory = resolve(outputRoot, component);
@@ -20,7 +21,10 @@ test("dry run generates Bicep and azd manifests for multiple components", async 
         `examples/chatbot/src/components/${component}/provisioning.ts`,
       ),
       outputDirectory,
-      deploymentName: `dev-${component}`,
+      azdProjectDirectory: outputRoot,
+      layer: component,
+      dependsOn: component === "shared" ? [] : ["shared"],
+      deploymentName: "dev-chatbot",
       scope: "resourceGroup",
       resourceGroup: "rg-test",
       subscription: "00000000-0000-0000-0000-000000000000",
@@ -30,10 +34,44 @@ test("dry run generates Bicep and azd manifests for multiple components", async 
     assert.ok(
       (await readFile(resolve(outputDirectory, "main.bicepparam"), "utf8")).trim(),
     );
-    assert.equal(
-      JSON.parse(await readFile(resolve(outputDirectory, "azure.yaml"), "utf8"))
-        .name,
-      `dev-${component}`,
-    );
   }
+  assert.deepEqual(
+    JSON.parse(await readFile(resolve(outputRoot, "azure.yaml"), "utf8")),
+    {
+      name: "dev-chatbot",
+      requiredVersions: { azd: ">= 1.30.0" },
+      infra: {
+        provider: "bicep",
+        layers: [
+          { name: "shared", path: "./shared", module: "main" },
+          {
+            name: "agent",
+            path: "./agent",
+            module: "main",
+            dependsOn: ["shared"],
+          },
+          {
+            name: "frontend",
+            path: "./frontend",
+            module: "main",
+            dependsOn: ["shared"],
+          },
+        ],
+      },
+    },
+  );
+  assert.deepEqual(
+    JSON.parse(
+      await readFile(resolve(outputRoot, ".deploy-js-project.json"), "utf8"),
+    ),
+    { schemaVersion: "1.0", kind: "layered-azd-project" },
+  );
+  assert.deepEqual(
+    messages.filter((message) => message.startsWith("[deploy-js] $ azd provision")),
+    [
+      "[deploy-js] $ azd provision shared --environment dev --no-prompt",
+      "[deploy-js] $ azd provision agent --environment dev --no-prompt",
+      "[deploy-js] $ azd provision frontend --environment dev --no-prompt",
+    ],
+  );
 });

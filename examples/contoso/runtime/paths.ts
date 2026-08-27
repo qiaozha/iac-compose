@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 export const deploymentRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const packageRoot = resolve(deploymentRoot, "../../../FoundryChatbot/support-agent-template/artifacts/contoso-support/package");
 export const generatedRoot = resolve(deploymentRoot, ".generated");
-export const stateRoot = resolve(deploymentRoot, ".state");
 export const environmentRoot = resolve(deploymentRoot, "environments");
 export const generatedSharedProject = resolve(generatedRoot, "shared");
 export const generatedAgentProject = resolve(generatedRoot, "agent");

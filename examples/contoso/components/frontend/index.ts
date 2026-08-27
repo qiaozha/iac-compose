@@ -16,6 +16,7 @@ import {
 import { configureEntraApplications } from "../shared/identity.js";
 import {
   generatedFrontendProject,
+  generatedRoot,
   frontendProvisioningEntrypoint,
   packageRoot,
 } from "../../runtime/paths.js";
@@ -27,6 +28,9 @@ export async function frontend(deployment: Deployment): Promise<void> {
     {
       entrypoint: frontendProvisioningEntrypoint,
       outputDirectory: generatedFrontendProject,
+      azdProjectDirectory: generatedRoot,
+      layer: "frontend",
+      dependsOn: ["shared"],
       deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-frontend`,
       scope: "resourceGroup",
       resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
@@ -36,7 +40,7 @@ export async function frontend(deployment: Deployment): Promise<void> {
   );
   await deployment.deploy("persist frontend infrastructure", async () => {
     await persistEnvironment(
-      requiredEnv("AZURE_ENV_NAME"),
+      deployment,
       infrastructureOutputs,
     );
   });
@@ -64,7 +68,7 @@ export async function frontend(deployment: Deployment): Promise<void> {
     });
   });
   const service = {
-    directory: generatedFrontendProject,
+    directory: generatedRoot,
     service: "frontend",
     ...(deployment.dryRun
       ? {}
@@ -115,7 +119,7 @@ export async function frontend(deployment: Deployment): Promise<void> {
     }),
   );
   await deployment.deploy("persist frontend deployment outputs", async () => {
-    await persistEnvironment(requiredEnv("AZURE_ENV_NAME"), outputs);
+    await persistEnvironment(deployment, outputs);
   });
 }
 

@@ -77,7 +77,6 @@ import { fileURLToPath } from "node:url";
 export const deploymentRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const packageRoot = resolve(deploymentRoot, ${JSON.stringify(packagePath.split(sep).join("/"))});
 export const generatedRoot = resolve(deploymentRoot, ".generated");
-export const stateRoot = resolve(deploymentRoot, ".state");
 export const environmentRoot = resolve(deploymentRoot, "environments");
 ${generatedProjects}
 ${provisioningEntrypoints}
@@ -93,11 +92,11 @@ export const identityConfigurationEntrypoint = resolve(
 `;
 }
 
-export function renderRuntimeEnvironmentSource(): string {
+export function renderRuntimeEnvironmentSource(solutionName: string): string {
   return `import { resolve } from "node:path";
 
 import {
-  persistEnvironmentFile,
+  createAzdProject,
   readEnvironmentFile,
   requiredEnv,
   resolveAzureSubscriptionContext,
@@ -105,7 +104,7 @@ import {
   type Deployment,
   type EnvironmentValues,
 } from "imperative-deploy";
-import { environmentRoot, stateRoot } from "./paths.js";
+import { environmentRoot, generatedRoot } from "./paths.js";
 
 export { requiredEnv, type EnvironmentValues };
 
@@ -115,11 +114,16 @@ export async function prepareEnvironment(deployment: Deployment): Promise<void> 
   const configuredValues = await readEnvironmentFile(
     resolve(environmentRoot, \`\${name}.json\`),
   );
-  const persistedValues = await readEnvironmentFile(stateFile(name));
+  const persistedValues = deployment.dryRun
+    ? {}
+    : await environmentProject(deployment, name).getValues();
   Object.assign(process.env, configuredValues, persistedValues, shellValues, {
     AZURE_ENV_NAME: name,
   });
   process.env.AZURE_LOCATION ??= "westus2";
+  if (deployment.dryRun) {
+    await environmentProject(deployment, name).initialize();
+  }
 
   await deployment.deploy("resolve Azure account context", async () => {
     const account = await resolveAzureSubscriptionContext(deployment, {
@@ -128,7 +132,7 @@ export async function prepareEnvironment(deployment: Deployment): Promise<void> 
     });
     process.env.AZURE_SUBSCRIPTION_ID = account.subscriptionId;
     process.env.AZURE_TENANT_ID = account.tenantId;
-    await persistEnvironment(name, {
+    await persistEnvironment(deployment, {
       AZURE_SUBSCRIPTION_ID: account.subscriptionId,
       AZURE_TENANT_ID: account.tenantId,
       AZURE_LOCATION: requiredEnv("AZURE_LOCATION"),
@@ -141,15 +145,22 @@ export async function prepareEnvironment(deployment: Deployment): Promise<void> 
 }
 
 export async function persistEnvironment(
-  name: string,
+  deployment: Deployment,
   values: EnvironmentValues,
 ): Promise<void> {
-  await persistEnvironmentFile(stateFile(name), values);
-  Object.assign(process.env, values);
+  await environmentProject(deployment).setValues(values);
 }
 
-function stateFile(name: string): string {
-  return resolve(stateRoot, \`\${name}.json\`);
+function environmentProject(deployment: Deployment, environment?: string) {
+  return createAzdProject(deployment, {
+    directory: generatedRoot,
+    environment,
+    mergeManifest: true,
+    manifest: {
+      name: ${JSON.stringify(generatedAzdProjectName(solutionName))},
+      requiredVersions: { azd: ">= 1.30.0" },
+    },
+  });
 }
 `;
 }
@@ -188,6 +199,7 @@ export function renderSharedComponentSource(
 } from "imperative-deploy";
 import { persistEnvironment, requiredEnv } from "../../runtime/environment.js";
 import {
+  generatedRoot,
   generatedSharedProject,
   sharedProvisioningEntrypoint,
 } from "../../runtime/paths.js";
@@ -210,6 +222,8 @@ export async function shared(deployment: Deployment): Promise<void> {
 ${grantStep}  const outputs = await deployment.provision("solution infrastructure", {
     entrypoint: sharedProvisioningEntrypoint,
     outputDirectory: generatedSharedProject,
+    azdProjectDirectory: generatedRoot,
+    layer: "shared",
     deploymentName: \`\${environment}-\${solutionName}\`,
     scope: "resourceGroup",
     resourceGroup,
@@ -217,7 +231,7 @@ ${grantStep}  const outputs = await deployment.provision("solution infrastructur
     location: requiredEnv("AZURE_LOCATION"),
   });
   await deployment.deploy("persist solution infrastructure", async () => {
-    await persistEnvironment(environment, outputs);
+    await persistEnvironment(deployment, outputs);
   });
 ${hasEntra ? `  await ensureEntraApplications(deployment);
 ` : ""}}
@@ -226,4 +240,13 @@ ${hasEntra ? `  await ensureEntraApplications(deployment);
 
 function escapeTemplateLiteral(value: string): string {
   return value.replaceAll("\\", "\\\\").replaceAll("`", "\\`").replaceAll("${", "\\${");
+}
+
+function generatedAzdProjectName(solutionName: string): string {
+  const normalized = solutionName
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-|-$/g, "");
+  return `imperative-deploy-${normalized || "app"}`;
 }

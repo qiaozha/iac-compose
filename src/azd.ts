@@ -41,11 +41,14 @@ export class AzdProject {
       "dev";
   }
 
-  async provision(): Promise<Record<string, string>> {
+  async provision(layer?: string): Promise<Record<string, string>> {
     await this.initialize();
+    const args = ["provision"];
+    if (layer) args.push(layer);
+    args.push("--environment", this.environment, "--no-prompt");
     await this.#deployment.execute({
       command: "azd",
-      args: ["provision", "--environment", this.environment, "--no-prompt"],
+      args,
       cwd: this.directory,
     });
     if (this.#deployment.dryRun) return {};
@@ -89,6 +92,7 @@ export class AzdProject {
   }
 
   async getValues(): Promise<Record<string, string>> {
+    if (!(await this.#environmentExists())) return {};
     const output = await this.#deployment.capture({
       command: "azd",
       args: ["env", "get-values", "--environment", this.environment],
@@ -97,6 +101,13 @@ export class AzdProject {
     const values = parseAzdEnvironment(output);
     Object.assign(process.env, values);
     return values;
+  }
+
+  async setValues(values: AzdEnvironmentValues): Promise<void> {
+    await this.initialize();
+    const compacted = compactValues(values);
+    await this.#writeValues(compacted);
+    Object.assign(process.env, compacted);
   }
 
   async initialize(): Promise<void> {
@@ -142,38 +153,41 @@ export class AzdProject {
       AZURE_RESOURCE_GROUP: process.env.AZURE_RESOURCE_GROUP,
       ...this.#options.values,
     });
-    if (Object.keys(values).length > 0) {
-      const valuesFile = resolve(
-        this.directory,
-        `.deploy-js-env-${process.pid}-${Date.now()}`,
-      );
-      if (!this.#deployment.dryRun) {
-        await writeFile(valuesFile, serializeAzdEnvironment(values), {
-          mode: 0o600,
-        });
-      }
-      try {
-        await this.#deployment.execute({
-          command: "azd",
-          args: [
-            "env",
-            "set",
-            "--file",
-            valuesFile,
-            "--environment",
-            this.environment,
-            "--no-prompt",
-          ],
-          cwd: this.directory,
-        });
-      } finally {
-        if (!this.#deployment.dryRun) {
-          await rm(valuesFile, { force: true });
-        }
-      }
-    }
+    await this.#writeValues(values);
 
     this.#initialized = true;
+  }
+
+  async #writeValues(values: Readonly<Record<string, string>>): Promise<void> {
+    if (Object.keys(values).length === 0) return;
+    const valuesFile = resolve(
+      this.directory,
+      `.deploy-js-env-${process.pid}-${Date.now()}`,
+    );
+    if (!this.#deployment.dryRun) {
+      await writeFile(valuesFile, serializeAzdEnvironment(values), {
+        mode: 0o600,
+      });
+    }
+    try {
+      await this.#deployment.execute({
+        command: "azd",
+        args: [
+          "env",
+          "set",
+          "--file",
+          valuesFile,
+          "--environment",
+          this.environment,
+          "--no-prompt",
+        ],
+        cwd: this.directory,
+      });
+    } finally {
+      if (!this.#deployment.dryRun) {
+        await rm(valuesFile, { force: true });
+      }
+    }
   }
 
   async #environmentExists(): Promise<boolean> {
@@ -258,9 +272,34 @@ async function mergeAzdManifest(
     ...existing,
     ...manifest,
     ...(existing.name === undefined ? {} : { name: existing.name }),
-    ...mergeManifestSection("infra", existing, manifest),
+    ...mergeManifestInfra(existing, manifest),
     ...mergeManifestSection("services", existing, manifest),
   };
+}
+
+function mergeManifestInfra(
+  existing: Readonly<Record<string, unknown>>,
+  manifest: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  const existingValue = asRecord(existing.infra);
+  const manifestValue = asRecord(manifest.infra);
+  if (!existingValue && !manifestValue) return {};
+
+  const infra = { ...existingValue, ...manifestValue };
+  const existingLayers = asLayers(existingValue?.layers);
+  const manifestLayers = asLayers(manifestValue?.layers);
+  if (existingLayers || manifestLayers) {
+    const layers = [...(existingLayers ?? [])];
+    for (const layer of manifestLayers ?? []) {
+      const index = layers.findIndex((candidate) => candidate.name === layer.name);
+      if (index < 0) layers.push(layer);
+      else layers[index] = layer;
+    }
+    delete infra.path;
+    delete infra.module;
+    infra.layers = layers;
+  }
+  return { infra };
 }
 
 function mergeManifestSection(
@@ -278,4 +317,21 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+function asLayers(
+  value: unknown,
+): (Readonly<Record<string, unknown>> & { readonly name: string })[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.map((layer) => {
+    if (
+      typeof layer !== "object" ||
+      layer === null ||
+      Array.isArray(layer) ||
+      typeof (layer as Record<string, unknown>).name !== "string"
+    ) {
+      throw new Error("Generated azd manifest contains an invalid infrastructure layer.");
+    }
+    return layer as Readonly<Record<string, unknown>> & { readonly name: string };
+  });
 }

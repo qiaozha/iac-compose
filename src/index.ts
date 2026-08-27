@@ -6,6 +6,7 @@ import {
   isAbsolute,
   relative,
   resolve,
+  sep,
 } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
@@ -122,6 +123,9 @@ export interface ProvisionOptions {
   compiler?: Command;
   artifactsDirectory?: string;
   outputDirectory?: string;
+  azdProjectDirectory?: string;
+  layer?: string;
+  dependsOn?: readonly string[];
   templateFile?: string;
   parametersFile?: string;
   deploymentName?: string;
@@ -232,24 +236,63 @@ export class Deployment {
           : {}),
         ...options.environmentValues,
       };
+      if (options.azdProjectDirectory && !options.layer) {
+        throw new Error("Provisioning with azdProjectDirectory requires a layer name.");
+      }
+      if (options.dependsOn && !options.layer) {
+        throw new Error("Provisioning dependencies require a layer name.");
+      }
+      const azdProjectDirectory = resolve(
+        this.projectDirectory,
+        options.azdProjectDirectory ?? outputDirectory,
+      );
+      const module = basename(templateFile, extname(templateFile));
+      const layer = options.layer?.trim();
+      if (options.layer !== undefined && !layer) {
+        throw new Error("Provisioning layer name cannot be empty.");
+      }
+      const infra = layer
+        ? {
+            provider: "bicep",
+            layers: [
+              {
+                name: layer,
+                path: relativeAzdPath(azdProjectDirectory, outputDirectory),
+                module,
+                ...(options.dependsOn?.length
+                  ? { dependsOn: [...options.dependsOn] }
+                  : {}),
+              },
+            ],
+          }
+        : {
+            provider: "bicep",
+            path: ".",
+            module,
+          };
+      if (layer) {
+        await writeFile(
+          resolve(azdProjectDirectory, ".deploy-js-project.json"),
+          `${JSON.stringify({ schemaVersion: "1.0", kind: "layered-azd-project" }, null, 2)}\n`,
+          { mode: 0o600 },
+        );
+      }
       const project = createAzdProject(this, {
-        directory: outputDirectory,
+        directory: azdProjectDirectory,
+        mergeManifest: layer !== undefined,
         manifest: {
           name: sanitizeAzdName(
             options.deploymentName ?? basename(outputDirectory),
           ),
-          infra: {
-            provider: "bicep",
-            path: ".",
-            module: basename(templateFile, extname(templateFile)),
-          },
+          ...(layer ? { requiredVersions: { azd: ">= 1.30.0" } } : {}),
+          infra,
         },
         subscription:
           options.subscription ?? process.env.AZURE_SUBSCRIPTION_ID,
         location: options.location ?? process.env.AZURE_LOCATION,
         values: environmentValues,
       });
-      outputs = await project.provision();
+      outputs = await project.provision(layer);
     }, true);
     return outputs;
   }
@@ -328,6 +371,16 @@ export class Deployment {
       });
     });
   }
+}
+
+function relativeAzdPath(projectDirectory: string, outputDirectory: string): string {
+  const path = relative(projectDirectory, outputDirectory);
+  if (isAbsolute(path) || path === ".." || path.startsWith(`..${sep}`)) {
+    throw new Error(
+      `Provisioning output directory '${outputDirectory}' must be inside azd project '${projectDirectory}'.`,
+    );
+  }
+  return path ? `./${path.split(sep).join("/")}` : ".";
 }
 
 export async function compileProvisioning(

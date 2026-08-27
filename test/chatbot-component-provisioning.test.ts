@@ -216,6 +216,8 @@ test("chatbot provisioning paths stay within the example", async () => {
     /js-provisioning-lib|provisioningRoot|provisioningDemo|provisioningArtifacts/,
   );
   assert.doesNotMatch(paths, /\.generated\/infra|generated\w+Infra/);
+  assert.match(paths, /generatedRoot = resolve\(exampleRoot, "\.generated"\)/);
+  assert.doesNotMatch(paths, /stateRoot|\.state/);
   for (const component of [
     "shared",
     "agent",
@@ -225,7 +227,10 @@ test("chatbot provisioning paths stay within the example", async () => {
     "identity",
     "logic-app",
   ]) {
-    assert.match(paths, new RegExp(`\\.generated/${component}`));
+    assert.match(
+      paths,
+      new RegExp(`resolve\\(\\s*generatedRoot,\\s*"${component}"`),
+    );
   }
 });
 

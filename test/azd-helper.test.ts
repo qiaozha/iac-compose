@@ -120,10 +120,12 @@ fi
     const deployed = await project.deploy("api", {
       fromPackage: "registry.example/api:dev",
     });
+    await project.setValues({ LIFECYCLE_OUTPUT: "persisted" });
 
     assert.equal(provisioned.SERVICE_NAME, "deployed-service");
     assert.equal(deployed.SERVICE_URI, "https://example.test");
     assert.equal(process.env.SERVICE_NAME, "deployed-service");
+    assert.equal(process.env.LIFECYCLE_OUTPUT, "persisted");
     assert.deepEqual(
       JSON.parse(await readFile(join(projectDirectory, "azure.yaml"), "utf8")),
       {
@@ -153,9 +155,16 @@ fi
       ),
       true,
     );
+    assert.equal(
+      invocations.some(
+        (line) => line === 'env-value LIFECYCLE_OUTPUT="persisted"',
+      ),
+      true,
+    );
   } finally {
     process.env.PATH = previousPath;
     if (previousLog === undefined) delete process.env.DEPLOY_JS_AZD_LOG;
     else process.env.DEPLOY_JS_AZD_LOG = previousLog;
+    delete process.env.LIFECYCLE_OUTPUT;
   }
 });

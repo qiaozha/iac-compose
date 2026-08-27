@@ -42,6 +42,9 @@ export function componentProvisioningBlock(
     {
       entrypoint: ${entrypoint},
       outputDirectory: ${generatedProject},
+      azdProjectDirectory: generatedRoot,
+      layer: ${JSON.stringify(component)},
+      dependsOn: ["shared"],
       deploymentName: \`\${requiredEnv("AZURE_ENV_NAME")}-${escapeTemplateLiteral(component)}\`,
       scope: "resourceGroup",
       resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
@@ -51,7 +54,7 @@ ${locationOverride}    },
   );
 ${filterAiLocation}  await deployment.deploy(${JSON.stringify(`persist ${component} infrastructure`)}, async () => {
     await persistEnvironment(
-      requiredEnv("AZURE_ENV_NAME"),
+      deployment,
       ${persistedOutputs},
     );
   });
@@ -64,7 +67,8 @@ export function componentPathImports(
   includePackageRoot: boolean,
 ): string {
   return [
-    `  ${generatedProjectName(component)},`,
+    ...(hasProvisioning ? [`  ${generatedProjectName(component)},`] : []),
+    ...(hasProvisioning || includePackageRoot ? ["  generatedRoot,"] : []),
     ...(hasProvisioning ? [`  ${provisioningEntrypointName(component)},`] : []),
     ...(includePackageRoot ? ["  packageRoot,"] : []),
   ].join("\n");

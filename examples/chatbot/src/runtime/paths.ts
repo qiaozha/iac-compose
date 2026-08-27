@@ -27,27 +27,28 @@ export const functionAppProvisioningEntrypoint = resolve(
   sourceRoot,
   "components/function-app/provisioning.ts",
 );
-export const generatedSharedProject = resolve(exampleRoot, ".generated/shared");
-export const generatedAgentProject = resolve(exampleRoot, ".generated/agent");
+export const generatedRoot = resolve(exampleRoot, ".generated");
+export const generatedSharedProject = resolve(generatedRoot, "shared");
+export const generatedAgentProject = resolve(generatedRoot, "agent");
 export const generatedAgentServerProject = resolve(
-  exampleRoot,
-  ".generated/agent-server",
+  generatedRoot,
+  "agent-server",
 );
 export const generatedFunctionAppProject = resolve(
-  exampleRoot,
-  ".generated/function-app",
+  generatedRoot,
+  "function-app",
 );
 export const generatedFrontendProject = resolve(
-  exampleRoot,
-  ".generated/frontend",
+  generatedRoot,
+  "frontend",
 );
 export const generatedIdentityProject = resolve(
-  exampleRoot,
-  ".generated/identity",
+  generatedRoot,
+  "identity",
 );
 export const generatedLogicAppProject = resolve(
-  exampleRoot,
-  ".generated/logic-app",
+  generatedRoot,
+  "logic-app",
 );
 export const logicAppProvisioningEntrypoint = resolve(
   sourceRoot,
@@ -61,7 +62,6 @@ export const identityConfigurationEntrypoint = resolve(
   sourceRoot,
   "components/shared/identity-configuration.ts",
 );
-export const stateRoot = resolve(exampleRoot, ".state");
 export const environmentRoot = resolve(sourceRoot, "environments");
 export const botConfigRoot = resolve(sourceRoot, "components/shared/config");
 

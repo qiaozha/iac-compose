@@ -1,8 +1,8 @@
 import { resolve } from "node:path";
 
 import {
+  createAzdProject,
   optionalEnv,
-  persistEnvironmentFile,
   readEnvironmentFile,
   requiredEnv,
   resolveAzureAccountContext,
@@ -10,7 +10,7 @@ import {
   type Deployment,
   type EnvironmentValues,
 } from "imperative-deploy";
-import { environmentRoot, stateRoot } from "./paths.js";
+import { environmentRoot, generatedRoot } from "./paths.js";
 
 export { optionalEnv, requiredEnv, type EnvironmentValues };
 
@@ -20,12 +20,17 @@ export async function prepareEnvironment(deployment: Deployment): Promise<void> 
   const configuredValues = await readEnvironmentFile(
     resolve(environmentRoot, `${name}.json`),
   );
-  const persistedValues = await readEnvironmentFile(stateFile(name));
+  const persistedValues = deployment.dryRun
+    ? {}
+    : await environmentProject(deployment, name).getValues();
 
   Object.assign(process.env, configuredValues, persistedValues, shellValues, {
     AZURE_ENV_NAME: name,
   });
   process.env.AZURE_LOCATION ??= "westus2";
+  if (deployment.dryRun) {
+    await environmentProject(deployment, name).initialize();
+  }
 
   await deployment.deploy("resolve Azure account context", async () => {
     const account = await resolveAzureAccountContext(deployment, {
@@ -38,7 +43,7 @@ export async function prepareEnvironment(deployment: Deployment): Promise<void> 
     process.env.AZURE_TENANT_ID = account.tenantId;
     process.env.DEVELOPER_PRINCIPAL_ID = account.principalId;
     process.env.DEVELOPER_PRINCIPAL_TYPE = account.principalType;
-    await persistEnvironment(name, {
+    await persistEnvironment(deployment, {
       AZURE_SUBSCRIPTION_ID: requiredEnv("AZURE_SUBSCRIPTION_ID"),
       AZURE_TENANT_ID: account.tenantId,
       AZURE_LOCATION: requiredEnv("AZURE_LOCATION"),
@@ -56,12 +61,20 @@ export async function prepareEnvironment(deployment: Deployment): Promise<void> 
 }
 
 export async function persistEnvironment(
-  name: string,
+  deployment: Deployment,
   values: EnvironmentValues,
 ): Promise<void> {
-  await persistEnvironmentFile(stateFile(name), values);
+  await environmentProject(deployment).setValues(values);
 }
 
-function stateFile(name: string): string {
-  return resolve(stateRoot, `${name}.json`);
+function environmentProject(deployment: Deployment, environment?: string) {
+  return createAzdProject(deployment, {
+    directory: generatedRoot,
+    environment,
+    mergeManifest: true,
+    manifest: {
+      name: "imperative-deploy-chatbot",
+      requiredVersions: { azd: ">= 1.30.0" },
+    },
+  });
 }

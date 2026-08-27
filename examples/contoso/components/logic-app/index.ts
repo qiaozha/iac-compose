@@ -9,6 +9,7 @@ import {
 } from "../../runtime/environment.js";
 import {
   generatedLogicAppProject,
+  generatedRoot,
   logicAppProvisioningEntrypoint,
 } from "../../runtime/paths.js";
 
@@ -26,6 +27,9 @@ export async function logicApp(deployment: Deployment): Promise<void> {
     {
       entrypoint: logicAppProvisioningEntrypoint,
       outputDirectory: generatedLogicAppProject,
+      azdProjectDirectory: generatedRoot,
+      layer: "logic-app",
+      dependsOn: ["shared"],
       deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-logic-app`,
       scope: "resourceGroup",
       resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
@@ -35,7 +39,7 @@ export async function logicApp(deployment: Deployment): Promise<void> {
   );
   await deployment.deploy("persist logic-app infrastructure", async () => {
     await persistEnvironment(
-      requiredEnv("AZURE_ENV_NAME"),
+      deployment,
       infrastructureOutputs,
     );
   });

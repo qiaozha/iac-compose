@@ -10,7 +10,6 @@ import {
 } from "./helpers.js";
 import type { ComponentSourceOptions } from "./options.js";
 import type { ResourceRequirement } from "../../contracts/deployment.js";
-import { generatedProjectName } from "../names.js";
 
 export function renderContainerComponentSource(
   options: ComponentSourceOptions,
@@ -158,7 +157,6 @@ export function renderContainerComponentSource(
 `,
     )
     .join("");
-  const generatedProject = generatedProjectName(component);
   const pathImports = componentPathImports(component, hasProvisioning, true);
   const provisioning = componentProvisioningBlock(
     component,
@@ -186,7 +184,7 @@ export async function ${functionName}(deployment: Deployment): Promise<void> {
   const outputs: Record<string, string> = {};
 ${provisioning}
 ${entraConfigurationBlock}${serviceTagIngressBlock}${privateEndpointBlock}  const service = {
-    directory: ${generatedProject},
+  directory: generatedRoot,
     service: ${JSON.stringify(component)},
     ...(deployment.dryRun
       ? {}
@@ -213,7 +211,7 @@ ${environmentEntries}
   });
 ${teamsBlock}
   await deployment.deploy("persist ${escapeTemplateLiteral(component)} deployment outputs", async () => {
-    await persistEnvironment(requiredEnv("AZURE_ENV_NAME"), outputs);
+    await persistEnvironment(deployment, outputs);
   });
 }
 
