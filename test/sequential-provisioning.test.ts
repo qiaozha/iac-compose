@@ -15,10 +15,14 @@ test("dry run generates layered Bicep in one azd project", async () => {
     environment: "dev",
     log: (message) => messages.push(message),
   });
+  await mkdir(resolve(outputRoot, ".azure/dev"), { recursive: true });
+  await writeFile(resolve(outputRoot, ".azure/dev/config.json"), "{}\n");
   for (const component of ["shared", "agent", "agent", "frontend"]) {
     const outputDirectory = resolve(outputRoot, component);
     await mkdir(outputDirectory, { recursive: true });
     await writeFile(resolve(outputDirectory, "azure.yaml"), "{}\n");
+    await mkdir(resolve(outputDirectory, ".azure/dev"), { recursive: true });
+    await writeFile(resolve(outputDirectory, ".azure/dev/config.json"), "{}\n");
     await deployment.provision(`${component} infrastructure`, {
       entrypoint: resolve(
         `examples/chatbot/src/components/${component}/provisioning.ts`,
@@ -35,7 +39,9 @@ test("dry run generates layered Bicep in one azd project", async () => {
       (await readFile(resolve(outputDirectory, "main.bicepparam"), "utf8")).trim(),
     );
     await assert.rejects(access(resolve(outputDirectory, "azure.yaml")));
+    await assert.rejects(access(resolve(outputDirectory, ".azure")));
   }
+  await access(resolve(outputRoot, ".azure/dev/config.json"));
   assert.deepEqual(
     JSON.parse(await readFile(resolve(outputRoot, "azure.yaml"), "utf8")),
     {
