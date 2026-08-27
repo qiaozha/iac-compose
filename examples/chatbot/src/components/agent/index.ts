@@ -35,7 +35,6 @@ export async function agent(deployment: Deployment): Promise<void> {
   const outputs = await deployment.provision("Foundry agent infrastructure", {
     entrypoint: agentProvisioningEntrypoint,
     outputDirectory: generatedAgentProject,
-    azdProjectDirectory: generatedRoot,
     layer: "agent",
     dependsOn: ["shared"],
     deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-agent`,

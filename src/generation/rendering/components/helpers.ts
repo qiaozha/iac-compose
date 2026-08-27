@@ -42,7 +42,6 @@ export function componentProvisioningBlock(
     {
       entrypoint: ${entrypoint},
       outputDirectory: ${generatedProject},
-      azdProjectDirectory: generatedRoot,
       layer: ${JSON.stringify(component)},
       dependsOn: ["shared"],
       deploymentName: \`\${requiredEnv("AZURE_ENV_NAME")}-${escapeTemplateLiteral(component)}\`,
@@ -68,7 +67,7 @@ export function componentPathImports(
 ): string {
   return [
     ...(hasProvisioning ? [`  ${generatedProjectName(component)},`] : []),
-    ...(hasProvisioning || includePackageRoot ? ["  generatedRoot,"] : []),
+    ...(includePackageRoot ? ["  generatedRoot,"] : []),
     ...(hasProvisioning ? [`  ${provisioningEntrypointName(component)},`] : []),
     ...(includePackageRoot ? ["  packageRoot,"] : []),
   ].join("\n");

@@ -28,7 +28,6 @@ export async function frontend(deployment: Deployment): Promise<void> {
     {
       entrypoint: frontendProvisioningEntrypoint,
       outputDirectory: generatedFrontendProject,
-      azdProjectDirectory: generatedRoot,
       layer: "frontend",
       dependsOn: ["shared"],
       deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-frontend`,

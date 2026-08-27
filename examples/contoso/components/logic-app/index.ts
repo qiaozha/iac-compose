@@ -9,7 +9,6 @@ import {
 } from "../../runtime/environment.js";
 import {
   generatedLogicAppProject,
-  generatedRoot,
   logicAppProvisioningEntrypoint,
 } from "../../runtime/paths.js";
 
@@ -27,7 +26,6 @@ export async function logicApp(deployment: Deployment): Promise<void> {
     {
       entrypoint: logicAppProvisioningEntrypoint,
       outputDirectory: generatedLogicAppProject,
-      azdProjectDirectory: generatedRoot,
       layer: "logic-app",
       dependsOn: ["shared"],
       deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-logic-app`,

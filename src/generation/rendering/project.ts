@@ -199,7 +199,6 @@ export function renderSharedComponentSource(
 } from "imperative-deploy";
 import { persistEnvironment, requiredEnv } from "../../runtime/environment.js";
 import {
-  generatedRoot,
   generatedSharedProject,
   sharedProvisioningEntrypoint,
 } from "../../runtime/paths.js";
@@ -222,7 +221,6 @@ export async function shared(deployment: Deployment): Promise<void> {
 ${grantStep}  const outputs = await deployment.provision("solution infrastructure", {
     entrypoint: sharedProvisioningEntrypoint,
     outputDirectory: generatedSharedProject,
-    azdProjectDirectory: generatedRoot,
     layer: "shared",
     deploymentName: \`\${environment}-\${solutionName}\`,
     scope: "resourceGroup",

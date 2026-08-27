@@ -35,7 +35,6 @@ export function renderEntraIdentityLifecycleSource(
 } from "imperative-deploy";
 import { persistEnvironment, requiredEnv } from "../../runtime/environment.js";
 import {
-  generatedRoot,
   generatedIdentityProject,
   identityBootstrapEntrypoint,
   identityConfigurationEntrypoint,
@@ -97,7 +96,6 @@ export async function ensureEntraApplications(
   const outputs = await deployment.provision("server application registration", {
     entrypoint: identityBootstrapEntrypoint,
     outputDirectory: generatedIdentityProject,
-    azdProjectDirectory: generatedRoot,
     layer: "identity",
     dependsOn: ["shared"],
     deploymentName: identityDeploymentName,
@@ -197,7 +195,6 @@ export async function configureEntraApplications(
   ) => deployment.provision(name, {
     entrypoint: identityConfigurationEntrypoint,
     outputDirectory: generatedIdentityProject,
-    azdProjectDirectory: generatedRoot,
     layer: "identity",
     dependsOn: ["shared"],
     deploymentName: identityDeploymentName,

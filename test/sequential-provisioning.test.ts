@@ -7,7 +7,8 @@ import { test } from "node:test";
 import { createDeployment } from "../src/index.js";
 
 test("dry run generates layered Bicep in one azd project", async () => {
-  const outputRoot = await mkdtemp(join(tmpdir(), "deploy-js-components-"));
+  const root = await mkdtemp(join(tmpdir(), "deploy-js-components-"));
+  const outputRoot = resolve(root, ".generated");
   const messages: string[] = [];
   const deployment = createDeployment({
     dryRun: true,
@@ -21,7 +22,6 @@ test("dry run generates layered Bicep in one azd project", async () => {
         `examples/chatbot/src/components/${component}/provisioning.ts`,
       ),
       outputDirectory,
-      azdProjectDirectory: outputRoot,
       layer: component,
       dependsOn: component === "shared" ? [] : ["shared"],
       deploymentName: "dev-chatbot",

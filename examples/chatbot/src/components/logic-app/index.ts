@@ -10,7 +10,6 @@ import {
 } from "../../runtime/environment.js";
 import {
   generatedLogicAppProject,
-  generatedRoot,
   logicAppProvisioningEntrypoint,
 } from "../../runtime/paths.js";
 import { loadLogicAppTeamsConfig } from "./config.js";
@@ -241,7 +240,6 @@ function provisionLogicApp(
   return deployment.provision("Logic App resources and workflow", {
     entrypoint: logicAppProvisioningEntrypoint,
     outputDirectory: generatedLogicAppProject,
-    azdProjectDirectory: generatedRoot,
     layer: "logic-app",
     dependsOn: ["shared"],
     deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-logic-app`,

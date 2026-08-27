@@ -123,7 +123,6 @@ export interface ProvisionOptions {
   compiler?: Command;
   artifactsDirectory?: string;
   outputDirectory?: string;
-  azdProjectDirectory?: string;
   layer?: string;
   dependsOn?: readonly string[];
   templateFile?: string;
@@ -236,21 +235,15 @@ export class Deployment {
           : {}),
         ...options.environmentValues,
       };
-      if (options.azdProjectDirectory && !options.layer) {
-        throw new Error("Provisioning with azdProjectDirectory requires a layer name.");
-      }
       if (options.dependsOn && !options.layer) {
         throw new Error("Provisioning dependencies require a layer name.");
       }
-      const azdProjectDirectory = resolve(
-        this.projectDirectory,
-        options.azdProjectDirectory ?? outputDirectory,
-      );
       const module = basename(templateFile, extname(templateFile));
       const layer = options.layer?.trim();
       if (options.layer !== undefined && !layer) {
         throw new Error("Provisioning layer name cannot be empty.");
       }
+      const azdProjectDirectory = layer ? dirname(outputDirectory) : outputDirectory;
       const infra = layer
         ? {
             provider: "bicep",

@@ -250,7 +250,6 @@ await deployment.provision("resources", {
   compiler: { command: "pnpm", args: ["run", "compile"] },
   artifactsDirectory: "generated/bicep",
   outputDirectory: ".generated/resources",
-  azdProjectDirectory: ".generated",
   layer: "resources",
   location: process.env.AZURE_LOCATION,
 });
@@ -259,9 +258,10 @@ await deployment.provision("resources", {
 The runtime records generated paths in `.deploy-js-generated.json` and only
 replaces those files. Layered provisioning merges a JSON-compatible
 `.generated/azure.yaml`, synchronizes its shared azd environment, runs
-`azd provision <layer>`, and returns azd environment outputs as strings. Omit
-`azdProjectDirectory` and `layer` to retain a standalone azd project for a
-single provisioning call.
+`azd provision <layer>`, and returns azd environment outputs as strings. When
+`layer` is set, the runtime infers the azd project root from the parent of
+`outputDirectory`. Omit `layer` to retain a standalone azd project for a single
+provisioning call.
 
 ## Chatbot integration
 

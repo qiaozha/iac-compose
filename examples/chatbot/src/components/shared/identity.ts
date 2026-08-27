@@ -9,7 +9,6 @@ import {
   requiredEnv,
 } from "../../runtime/environment.js";
 import {
-  generatedRoot,
   generatedIdentityProject,
   identityBootstrapEntrypoint,
   identityConfigurationEntrypoint,
@@ -54,7 +53,6 @@ export async function ensureServerApplication(deployment: Deployment): Promise<s
   const outputs = await deployment.provision("server application registration", {
     entrypoint: identityBootstrapEntrypoint,
     outputDirectory: generatedIdentityProject,
-    azdProjectDirectory: generatedRoot,
     layer: "identity",
     deploymentName: identityDeploymentName,
     location: requiredEnv("AZURE_LOCATION"),
@@ -107,7 +105,6 @@ export async function configureServerApplication(deployment: Deployment): Promis
     deployment.provision(name, {
       entrypoint: identityConfigurationEntrypoint,
       outputDirectory: generatedIdentityProject,
-      azdProjectDirectory: generatedRoot,
       layer: "identity",
       deploymentName: identityDeploymentName,
       location: requiredEnv("AZURE_LOCATION"),
