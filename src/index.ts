@@ -6,15 +6,18 @@ import {
   isAbsolute,
   relative,
   resolve,
+  sep,
 } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
-import { createAzdProject } from "./azd.js";
+import { deployJsAzdTemplate, getAzdProject } from "./azd.js";
 import { importTypeScript } from "./typescript-loader.js";
 
 export {
   AzdProject,
   createAzdProject,
+  deployJsAzdTemplate,
+  getAzdProject,
   parseAzdEnvironment,
   type AzdDeployOptions,
   type AzdEnvironmentValues,
@@ -117,7 +120,13 @@ export interface Command {
   env?: NodeJS.ProcessEnv;
 }
 
+export interface ProvisioningLayer {
+  readonly entrypoint: string;
+  readonly outputDirectory: string;
+}
+
 export interface ProvisionOptions {
+  layer?: ProvisioningLayer;
   entrypoint?: string;
   compiler?: Command;
   artifactsDirectory?: string;
@@ -165,6 +174,7 @@ export class Deployment {
   readonly dryRun: boolean;
 
   readonly #log: (message: string) => void;
+  readonly #layersByProject = new Map<string, string[]>();
 
   constructor(options: DeploymentOptions = {}) {
     this.projectDirectory = resolve(options.projectDirectory ?? process.cwd());
@@ -193,20 +203,38 @@ export class Deployment {
   async provision(name: string, options: ProvisionOptions): Promise<ProvisionOutputs> {
     let outputs: ProvisionOutputs = {};
     await this.#step("provision", name, async () => {
+      if (
+        options.layer &&
+        (options.entrypoint ||
+          options.outputDirectory ||
+          options.compiler ||
+          options.artifactsDirectory)
+      ) {
+        throw new Error(
+          "Provisioning with a layer cannot also specify source or output options.",
+        );
+      }
       const outputDirectory = resolve(
         this.projectDirectory,
-        options.outputDirectory ?? ".deploy-js/infra",
+        options.layer?.outputDirectory ??
+          options.outputDirectory ??
+          ".deploy-js/infra",
       );
+      const layer = inferLayerName(outputDirectory);
+      const azdProjectDirectory = layer ? dirname(outputDirectory) : outputDirectory;
+      const entrypoint = options.layer?.entrypoint ?? options.entrypoint;
       if (options.compiler && options.artifactsDirectory) {
         await this.#execute(options.compiler);
         await copyProvisioningArtifacts(
           resolve(this.projectDirectory, options.artifactsDirectory),
           outputDirectory,
+          azdProjectDirectory,
         );
-      } else if (options.entrypoint) {
+      } else if (entrypoint) {
         await compileProvisioning(
-          resolve(this.projectDirectory, options.entrypoint),
+          resolve(this.projectDirectory, entrypoint),
           outputDirectory,
+          azdProjectDirectory,
         );
       } else {
         throw new Error(
@@ -232,17 +260,47 @@ export class Deployment {
           : {}),
         ...options.environmentValues,
       };
-      const project = createAzdProject(this, {
-        directory: outputDirectory,
+      const module = basename(templateFile, extname(templateFile));
+      const dependsOn = layer
+        ? this.#inferLayerDependencies(azdProjectDirectory, layer)
+        : [];
+      const infra = layer
+        ? {
+            provider: "bicep",
+            layers: [
+              {
+                name: layer,
+                path: relativeAzdPath(azdProjectDirectory, outputDirectory),
+                module,
+                ...(dependsOn.length ? { dependsOn } : {}),
+              },
+            ],
+          }
+        : {
+            provider: "bicep",
+            path: ".",
+            module,
+          };
+      if (layer) {
+            await rm(resolve(outputDirectory, "azure.yaml"), { force: true });
+            await rm(resolve(outputDirectory, ".azure"), {
+              recursive: true,
+              force: true,
+            });
+        await rm(resolve(azdProjectDirectory, ".deploy-js-project.json"), {
+          force: true,
+        });
+      }
+      const project = getAzdProject(this, {
+        directory: azdProjectDirectory,
+        mergeManifest: layer !== undefined,
         manifest: {
           name: sanitizeAzdName(
             options.deploymentName ?? basename(outputDirectory),
           ),
-          infra: {
-            provider: "bicep",
-            path: ".",
-            module: basename(templateFile, extname(templateFile)),
-          },
+          ...(layer ? { metadata: { template: deployJsAzdTemplate } } : {}),
+          ...(layer ? { requiredVersions: { azd: ">= 1.30.0" } } : {}),
+          infra,
         },
         subscription:
           options.subscription ?? process.env.AZURE_SUBSCRIPTION_ID,
@@ -277,6 +335,20 @@ export class Deployment {
     this.#log(`[deploy-js] $ ${formatCommand(command.command, command.args ?? [])}`);
     if (this.dryRun) return "";
     return this.#execute(command, true, false);
+  }
+
+  #inferLayerDependencies(projectDirectory: string, layer: string): string[] {
+    const layers = this.#layersByProject.get(projectDirectory) ?? [];
+    if (!this.#layersByProject.has(projectDirectory)) {
+      this.#layersByProject.set(projectDirectory, layers);
+    }
+    const existingIndex = layers.indexOf(layer);
+    if (existingIndex >= 0) {
+      return existingIndex === 0 ? [] : [layers[existingIndex - 1]!];
+    }
+    const dependsOn = layers.length > 0 ? [layers[layers.length - 1]!] : [];
+    layers.push(layer);
+    return dependsOn;
   }
 
   async #step(
@@ -330,9 +402,26 @@ export class Deployment {
   }
 }
 
+function inferLayerName(outputDirectory: string): string | undefined {
+  return basename(dirname(outputDirectory)) === ".generated"
+    ? basename(outputDirectory)
+    : undefined;
+}
+
+function relativeAzdPath(projectDirectory: string, outputDirectory: string): string {
+  const path = relative(projectDirectory, outputDirectory);
+  if (isAbsolute(path) || path === ".." || path.startsWith(`..${sep}`)) {
+    throw new Error(
+      `Provisioning output directory '${outputDirectory}' must be inside azd project '${projectDirectory}'.`,
+    );
+  }
+  return path ? `./${path.split(sep).join("/")}` : ".";
+}
+
 export async function compileProvisioning(
   entrypoint: string,
   outputDirectory: string,
+  generatedFilesRoot = outputDirectory,
 ): Promise<void> {
   const resolvedEntrypoint = resolve(entrypoint);
   const module = (await importTypeScript(
@@ -340,29 +429,42 @@ export async function compileProvisioning(
   )) as Record<string, unknown>;
   const files = resolveRenderedFiles(module, resolvedEntrypoint);
 
-  await installRenderedFiles(outputDirectory, files);
+  await installRenderedFiles(outputDirectory, files, generatedFilesRoot);
 }
 
 export async function copyProvisioningArtifacts(
   artifactsDirectory: string,
   outputDirectory: string,
+  generatedFilesRoot = outputDirectory,
 ): Promise<void> {
   const files = await readRenderedDirectory(artifactsDirectory);
   if (files.length === 0) {
     throw new Error(`Provisioning compiler produced no files in '${artifactsDirectory}'.`);
   }
-  await installRenderedFiles(outputDirectory, files);
+  await installRenderedFiles(outputDirectory, files, generatedFilesRoot);
 }
 
 async function installRenderedFiles(
   outputDirectory: string,
   files: readonly RenderedFile[],
+  generatedFilesRoot: string,
 ): Promise<void> {
-
+  outputDirectory = resolve(outputDirectory);
+  generatedFilesRoot = resolve(generatedFilesRoot);
   await mkdir(outputDirectory, { recursive: true });
-  const manifestPath = resolve(outputDirectory, ".deploy-js-generated.json");
-  for (const generatedPath of await readGeneratedManifest(manifestPath)) {
-    await rm(resolveOutputPath(outputDirectory, generatedPath), { force: true });
+  await mkdir(generatedFilesRoot, { recursive: true });
+  const manifestPath = resolve(generatedFilesRoot, ".deploy-js-generated.json");
+  const generatedPaths = new Set(await readGeneratedManifest(manifestPath));
+  if (generatedFilesRoot !== outputDirectory) {
+    await migrateLayerGeneratedManifests(generatedFilesRoot, generatedPaths);
+  }
+
+  const outputPrefix = relativeGeneratedPath(generatedFilesRoot, outputDirectory);
+  const scopedPrefix = outputPrefix ? `${outputPrefix}/` : "";
+  for (const generatedPath of [...generatedPaths]) {
+    if (scopedPrefix && !generatedPath.startsWith(scopedPrefix)) continue;
+    await rm(resolveOutputPath(generatedFilesRoot, generatedPath), { force: true });
+    generatedPaths.delete(generatedPath);
   }
   await Promise.all(
     files.map(async (file) => {
@@ -371,10 +473,50 @@ async function installRenderedFiles(
       await writeFile(outputPath, file.contents);
     }),
   );
+  for (const file of files) {
+    generatedPaths.add(
+      relativeGeneratedPath(
+        generatedFilesRoot,
+        resolveOutputPath(outputDirectory, file.path),
+      ),
+    );
+  }
   await writeFile(
     manifestPath,
-    `${JSON.stringify(files.map((file) => file.path).sort(), null, 2)}\n`,
+    `${JSON.stringify([...generatedPaths].sort(), null, 2)}\n`,
   );
+}
+
+async function migrateLayerGeneratedManifests(
+  generatedFilesRoot: string,
+  generatedPaths: Set<string>,
+): Promise<void> {
+  for (const entry of await readdir(generatedFilesRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const layerDirectory = resolve(generatedFilesRoot, entry.name);
+    const manifestPath = resolve(layerDirectory, ".deploy-js-generated.json");
+    for (const generatedPath of await readGeneratedManifest(manifestPath)) {
+      generatedPaths.add(
+        relativeGeneratedPath(
+          generatedFilesRoot,
+          resolveOutputPath(layerDirectory, generatedPath),
+        ),
+      );
+    }
+    await rm(manifestPath, { force: true });
+  }
+}
+
+function relativeGeneratedPath(root: string, path: string): string {
+  const generatedPath = relative(root, path);
+  if (
+    isAbsolute(generatedPath) ||
+    generatedPath === ".." ||
+    generatedPath.startsWith(`..${sep}`)
+  ) {
+    throw new Error(`Generated provisioning output '${path}' must be inside '${root}'.`);
+  }
+  return generatedPath.split(sep).join("/");
 }
 
 async function readRenderedDirectory(

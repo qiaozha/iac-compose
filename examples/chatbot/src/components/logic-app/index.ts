@@ -9,8 +9,7 @@ import {
   requiredEnv,
 } from "../../runtime/environment.js";
 import {
-  generatedLogicAppProject,
-  logicAppProvisioningEntrypoint,
+  generatedLogicAppLayer,
 } from "../../runtime/paths.js";
 import { loadLogicAppTeamsConfig } from "./config.js";
 
@@ -140,7 +139,7 @@ export async function logicApp(deployment: Deployment): Promise<void> {
     teamsChannelIds,
   );
 
-  await persistEnvironment(requiredEnv("AZURE_ENV_NAME"), {
+  await persistEnvironment(deployment, {
     ...outputs,
     SERVICE_LOGIC_APP_NAME: requiredEnv("LOGIC_APP_WORKFLOW_NAME"),
     SERVICE_TEAMS_CONNECTION_NAME: requiredEnv("TEAMS_CONNECTION_NAME"),
@@ -238,8 +237,7 @@ function provisionLogicApp(
   teamsChannelIds: readonly string[],
 ) {
   return deployment.provision("Logic App resources and workflow", {
-    entrypoint: logicAppProvisioningEntrypoint,
-    outputDirectory: generatedLogicAppProject,
+    layer: generatedLogicAppLayer,
     deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-logic-app`,
     scope: "resourceGroup",
     resourceGroup,

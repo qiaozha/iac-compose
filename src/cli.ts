@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   createDeployment,
+  deployJsAzdTemplate,
   generateDeploymentCode,
   loadResourceRequirements,
   validateResourceRequirements,
@@ -39,7 +41,15 @@ interface ValidateOptions {
   grant: boolean;
 }
 
-type CliOptions = RunOptions | GenerateOptions | ValidateOptions;
+interface DownOptions {
+  command: "down";
+  projectDirectory: string;
+  environment: string;
+  force: true;
+  purge: boolean;
+}
+
+type CliOptions = RunOptions | GenerateOptions | ValidateOptions | DownOptions;
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
@@ -110,6 +120,25 @@ async function main(): Promise<void> {
     );
     return;
   }
+  if (options.command === "down") {
+    await verifyDeployJsProject(options.projectDirectory);
+    const deployment = createDeployment({
+      projectDirectory: options.projectDirectory,
+      environment: options.environment,
+    });
+    await deployment.execute({
+      command: "azd",
+      args: [
+        "down",
+        "--environment",
+        options.environment,
+        "--force",
+        ...(options.purge ? ["--purge"] : []),
+        "--no-prompt",
+      ],
+    });
+    return;
+  }
   const file = resolve(options.file);
   const module = (await importTypeScript(pathToFileURL(file).href)) as {
     default?: DeploymentProgram;
@@ -130,7 +159,55 @@ async function main(): Promise<void> {
 function parseArgs(args: readonly string[]): CliOptions {
   if (args[0] === "generate") return parseGenerateArgs(args.slice(1));
   if (args[0] === "validate") return parseValidateArgs(args.slice(1));
+  if (args[0] === "down") return parseDownArgs(args.slice(1));
   return parseRunArgs(args[0] === "run" ? args.slice(1) : args);
+}
+
+function parseDownArgs(args: readonly string[]): DownOptions {
+  let projectDirectory: string | undefined;
+  let environment: string | undefined;
+  let force = false;
+  let purge = false;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "-e" || argument === "--environment") {
+      environment = requiredValue(args, ++index, argument);
+    } else if (argument === "-C" || argument === "--cwd") {
+      projectDirectory = requiredValue(args, ++index, argument);
+    } else if (argument === "--force") {
+      force = true;
+    } else if (argument === "--purge") {
+      purge = true;
+    } else if (argument === "-h" || argument === "--help") {
+      printDownHelp();
+      process.exit(0);
+    } else if (argument?.startsWith("-")) {
+      throw new Error(`Unknown option: ${argument}`);
+    } else if (!projectDirectory) {
+      projectDirectory = argument;
+    } else {
+      throw new Error(`Unexpected argument: ${argument}`);
+    }
+  }
+
+  if (!projectDirectory) {
+    printDownHelp();
+    throw new Error("A generated azd project directory is required.");
+  }
+  if (!environment) {
+    throw new Error("Cleanup requires an explicit --environment value.");
+  }
+  if (!force) {
+    throw new Error("Cleanup requires --force to confirm resource deletion.");
+  }
+  return {
+    command: "down",
+    projectDirectory: resolve(projectDirectory),
+    environment,
+    force: true,
+    purge,
+  };
 }
 
 function parseRunArgs(args: readonly string[]): RunOptions {
@@ -280,17 +357,68 @@ function requiredValue(args: readonly string[], index: number, option: string): 
   return value;
 }
 
+async function verifyDeployJsProject(projectDirectory: string): Promise<void> {
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(
+      await readFile(resolve(projectDirectory, "azure.yaml"), "utf8"),
+    );
+  } catch {
+    throw new Error(
+      `Refusing cleanup: '${projectDirectory}' is not a generated deploy-js azd project.`,
+    );
+  }
+  const metadata = readObjectProperty(manifest, "metadata");
+  const infra = readObjectProperty(manifest, "infra");
+  if (
+    metadata?.template !== deployJsAzdTemplate ||
+    !Array.isArray(infra?.layers) ||
+    infra.layers.length === 0
+  ) {
+    throw new Error(
+      `Refusing cleanup: '${projectDirectory}' is not a layered deploy-js project.`,
+    );
+  }
+}
+
+function readObjectProperty(
+  value: unknown,
+  property: string,
+): Record<string, unknown> | undefined {
+  if (typeof value !== "object" || value === null || !(property in value)) {
+    return undefined;
+  }
+  const propertyValue = (value as Record<string, unknown>)[property];
+  return typeof propertyValue === "object" &&
+    propertyValue !== null &&
+    !Array.isArray(propertyValue)
+    ? (propertyValue as Record<string, unknown>)
+    : undefined;
+}
+
 function printHelp(): void {
   console.log(`Usage:
   deploy-js run <deployment.ts> [options]
   deploy-js generate --resources <requirements.json> --solution <solution.json> [options]
   deploy-js validate --resources <requirements.json> [options]
+  deploy-js down <generated-project-directory> --environment <name> --force [options]
 
 Run options:
   -e, --environment <name>  Select the deployment environment
   -C, --cwd <directory>     Set the deployment working directory
   -c, --component <name>    Run one deployment-defined component
       --dry-run             Print ordered steps without side effects
+  -h, --help                Show this help`);
+}
+
+function printDownHelp(): void {
+  console.log(`Usage: deploy-js down <generated-project-directory> --environment <name> --force [options]
+
+Options:
+  -e, --environment <name>  Select the azd environment to delete
+  -C, --cwd <directory>     Generated deploy-js azd project directory
+      --force               Confirm deletion and disable azd prompts (required)
+      --purge               Permanently delete soft-deleted resources
   -h, --help                Show this help`);
 }
 

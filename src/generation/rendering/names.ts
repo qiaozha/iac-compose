@@ -1,9 +1,5 @@
-export function generatedProjectName(component: string): string {
-  return `generated${pascalIdentifier(component)}Project`;
-}
-
-export function provisioningEntrypointName(component: string): string {
-  return `${typescriptIdentifier(component)}ProvisioningEntrypoint`;
+export function generatedLayerName(component: string): string {
+  return `generated${pascalIdentifier(component)}Layer`;
 }
 
 export function typescriptIdentifier(value: string): string {

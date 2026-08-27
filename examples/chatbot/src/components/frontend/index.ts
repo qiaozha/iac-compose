@@ -13,9 +13,9 @@ import {
   requiredEnv,
 } from "../../runtime/environment.js";
 import {
-  frontendProvisioningEntrypoint,
   frontendRoot,
-  generatedFrontendProject,
+  generatedFrontendLayer,
+  generatedRoot,
 } from "../../runtime/paths.js";
 import { ensureFrontendAccessRestrictions } from "../shared/frontend-access.js";
 
@@ -23,8 +23,7 @@ const teamsEnvironment = "deploy-js";
 
 export async function frontend(deployment: Deployment): Promise<void> {
   const outputs = await deployment.provision("Teams bot frontend infrastructure", {
-    entrypoint: frontendProvisioningEntrypoint,
-    outputDirectory: generatedFrontendProject,
+    layer: generatedFrontendLayer,
     deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-frontend`,
     scope: "resourceGroup",
     resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
@@ -32,7 +31,7 @@ export async function frontend(deployment: Deployment): Promise<void> {
     location: requiredEnv("AZURE_LOCATION"),
   });
   await deployment.deploy("persist frontend infrastructure", async () => {
-    await persistEnvironment(requiredEnv("AZURE_ENV_NAME"), outputs);
+    await persistEnvironment(deployment, outputs);
   });
   await deployment.deploy("allow frontend access to agent server", async () => {
     await ensureFrontendAccessRestrictions(deployment);
@@ -86,7 +85,7 @@ export async function frontend(deployment: Deployment): Promise<void> {
     ]) {
       if (teamsValues[name]) persisted[name] = teamsValues[name];
     }
-    await persistEnvironment(requiredEnv("AZURE_ENV_NAME"), persisted);
+    await persistEnvironment(deployment, persisted);
 
     const healthUrl = `${requiredEnv("BOT_BASE_URL").replace(/\/+$/, "")}/health`;
     await waitForHttp(healthUrl, { attempts: 12, delayMs: 10_000 }).catch((error) => {
@@ -97,7 +96,7 @@ export async function frontend(deployment: Deployment): Promise<void> {
 
 function frontendService() {
   return {
-    directory: generatedFrontendProject,
+    directory: generatedRoot,
     service: "frontend",
     project: frontendRoot,
     dockerfile: "Dockerfile",

@@ -136,6 +136,14 @@ test("generates chatbot-style deployment code in dependency order", async () => 
     join(outputDirectory, "components/backend/index.ts"),
     "utf8",
   );
+  const runtimeEnvironment = await readFile(
+    join(outputDirectory, "runtime/environment.ts"),
+    "utf8",
+  );
+  const runtimePaths = await readFile(
+    join(outputDirectory, "runtime/paths.ts"),
+    "utf8",
+  );
   assert.match(provisioning, /new Stack\(/);
   assert.match(provisioning, /new Workspace\(/);
   assert.match(provisioning, /new ApplicationInsightsComponent\(/);
@@ -171,6 +179,19 @@ test("generates chatbot-style deployment code in dependency order", async () => 
     /deploymentValue\(deployment, "applicationInsightsConnectionString"\)/,
   );
   assert.match(backend, /defaultAction: "Allow"/);
+  assert.match(sharedLifecycle, /layer: generatedSharedLayer/);
+  assert.match(backend, /layer: generatedBackendLayer/);
+  assert.doesNotMatch(
+    sharedLifecycle + backend,
+    /azdProjectDirectory|entrypoint:|outputDirectory:|dependsOn:/,
+  );
+  assert.match(runtimePaths, /generatedSharedLayer = provisioningLayer\("shared"\)/);
+  assert.match(runtimePaths, /generatedBackendLayer = provisioningLayer\("backend"\)/);
+  assert.doesNotMatch(runtimePaths, /generated\w+Project|ProvisioningEntrypoint/);
+  assert.match(backend, /directory: generatedRoot/);
+  assert.match(runtimeEnvironment, /\.getValues\(\)/);
+  assert.match(runtimeEnvironment, /\.setValues\(values\)/);
+  assert.doesNotMatch(runtimeEnvironment + runtimePaths, /stateRoot|\.state/);
 });
 
 test("limits generated Azure Bot names to 42 characters", async () => {

@@ -191,11 +191,14 @@ export async function generateDeploymentCode(
   );
   files.set(
     "runtime/paths.ts",
-    renderRuntimePathsSource(packagePath, ["shared", ...orderedComponents], [
+    renderRuntimePathsSource(packagePath, [
       ...provisioningSources.keys(),
     ], hasEntra),
   );
-  files.set("runtime/environment.ts", renderRuntimeEnvironmentSource());
+  files.set(
+    "runtime/environment.ts",
+    renderRuntimeEnvironmentSource(requirements.solution.name),
+  );
   for (const [owner, source] of provisioningSources) {
     files.set(`components/${owner}/provisioning.ts`, source);
   }

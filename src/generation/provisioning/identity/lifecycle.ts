@@ -35,9 +35,8 @@ export function renderEntraIdentityLifecycleSource(
 } from "imperative-deploy";
 import { persistEnvironment, requiredEnv } from "../../runtime/environment.js";
 import {
-  generatedIdentityProject,
-  identityBootstrapEntrypoint,
-  identityConfigurationEntrypoint,
+  generatedIdentityBootstrapLayer,
+  generatedIdentityConfigurationLayer,
 } from "../../runtime/paths.js";
 
 interface ApplicationSummary {
@@ -94,8 +93,7 @@ export async function ensureEntraApplications(
         );
   }
   const outputs = await deployment.provision("server application registration", {
-    entrypoint: identityBootstrapEntrypoint,
-    outputDirectory: generatedIdentityProject,
+    layer: generatedIdentityBootstrapLayer,
     deploymentName: identityDeploymentName,
     scope: "subscription",
     subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
@@ -122,7 +120,7 @@ export async function ensureEntraApplications(
     Object.assign(process.env, dryRunOutputs);
     return;
   }
-  await persistEnvironment(requiredEnv("AZURE_ENV_NAME"), outputs);
+  await persistEnvironment(deployment, outputs);
 }
 
 export async function configureEntraApplications(
@@ -191,8 +189,7 @@ export async function configureEntraApplications(
     name: string,
     preAuthorizeClients: boolean,
   ) => deployment.provision(name, {
-    entrypoint: identityConfigurationEntrypoint,
-    outputDirectory: generatedIdentityProject,
+    layer: generatedIdentityConfigurationLayer,
     deploymentName: identityDeploymentName,
     scope: "subscription",
     subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
@@ -213,7 +210,7 @@ export async function configureEntraApplications(
     true,
   );
   if (!deployment.dryRun) {
-    await persistEnvironment(requiredEnv("AZURE_ENV_NAME"), outputs);
+    await persistEnvironment(deployment, outputs);
   }
   await deployment.deploy("server application client authorization", async () => {
     for (const plan of applicationPlans) {

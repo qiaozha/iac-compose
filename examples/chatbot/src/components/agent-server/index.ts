@@ -10,15 +10,14 @@ import {
 } from "../../runtime/environment.js";
 import {
   agentRoot,
-  agentServerProvisioningEntrypoint,
-  generatedAgentServerProject,
+  generatedAgentServerLayer,
+  generatedRoot,
 } from "../../runtime/paths.js";
 import { uploadBotConfiguration } from "../shared/configuration.js";
 
 export async function agentServer(deployment: Deployment): Promise<void> {
   const outputs = await deployment.provision("FastAPI agent server infrastructure", {
-    entrypoint: agentServerProvisioningEntrypoint,
-    outputDirectory: generatedAgentServerProject,
+    layer: generatedAgentServerLayer,
     deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-agent-server`,
     scope: "resourceGroup",
     resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
@@ -28,7 +27,7 @@ export async function agentServer(deployment: Deployment): Promise<void> {
   await deployment.deploy(
     "persist agent server outputs and upload bot configuration",
     async () => {
-      await persistEnvironment(requiredEnv("AZURE_ENV_NAME"), outputs);
+      await persistEnvironment(deployment, outputs);
       await uploadBotConfiguration(deployment);
     },
   );
@@ -49,7 +48,7 @@ export async function agentServer(deployment: Deployment): Promise<void> {
       attempts: 18,
       delayMs: 10_000,
     });
-    await persistEnvironment(requiredEnv("AZURE_ENV_NAME"), {
+    await persistEnvironment(deployment, {
       SERVICE_AGENT_SERVER_IMAGE_NAME: image,
       SERVICE_AGENT_SERVER_NAME: siteName,
     });
@@ -58,7 +57,7 @@ export async function agentServer(deployment: Deployment): Promise<void> {
 
 function agentServerService() {
   return {
-    directory: generatedAgentServerProject,
+    directory: generatedRoot,
     service: "agent-server",
     resourceName:
       process.env.AGENT_SERVER_SITE_NAME?.trim() ||

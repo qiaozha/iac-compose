@@ -9,15 +9,14 @@ import {
   requiredEnv,
 } from "../../runtime/environment.js";
 import {
-  functionAppProvisioningEntrypoint,
   functionAppRoot,
-  generatedFunctionAppProject,
+  generatedFunctionAppLayer,
+  generatedRoot,
 } from "../../runtime/paths.js";
 
 export async function functionApp(deployment: Deployment): Promise<void> {
   const outputs = await deployment.provision("Function App infrastructure", {
-    entrypoint: functionAppProvisioningEntrypoint,
-    outputDirectory: generatedFunctionAppProject,
+    layer: generatedFunctionAppLayer,
     deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-function-app`,
     scope: "resourceGroup",
     resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
@@ -25,7 +24,7 @@ export async function functionApp(deployment: Deployment): Promise<void> {
     location: requiredEnv("AZURE_LOCATION"),
   });
   await deployment.deploy("persist Function App infrastructure", async () => {
-    await persistEnvironment(requiredEnv("AZURE_ENV_NAME"), outputs);
+    await persistEnvironment(deployment, outputs);
   });
 
   if (deployment.dryRun) {
@@ -58,7 +57,7 @@ export async function functionApp(deployment: Deployment): Promise<void> {
     if (state !== "Running") {
       throw new Error(`Function App '${name}' is '${state}', expected 'Running'.`);
     }
-    await persistEnvironment(requiredEnv("AZURE_ENV_NAME"), {
+    await persistEnvironment(deployment, {
       SERVICE_FUNCTION_APP_IMAGE_NAME: image,
       SERVICE_FUNCTION_APP_NAME: name,
     });
@@ -67,7 +66,7 @@ export async function functionApp(deployment: Deployment): Promise<void> {
 
 function functionService() {
   return {
-    directory: generatedFunctionAppProject,
+    directory: generatedRoot,
     service: "function-app",
     host: "function",
     project: functionAppRoot,

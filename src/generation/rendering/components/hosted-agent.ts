@@ -8,7 +8,6 @@ import {
 } from "./helpers.js";
 import type { ComponentSourceOptions } from "./options.js";
 import type { ResourceRequirement } from "../../contracts/deployment.js";
-import { generatedProjectName } from "../names.js";
 
 export function renderHostedAgentComponentSource(
   options: ComponentSourceOptions,
@@ -66,7 +65,6 @@ export function renderHostedAgentComponentSource(
   const principalOutput =
     container.produces?.find((output) => /IdentityPrincipalId$/i.test(output)) ??
     "agentIdentityPrincipalId";
-  const generatedProject = generatedProjectName(component);
   const pathImports = componentPathImports(component, hasProvisioning, true);
   const provisioning = componentProvisioningBlock(
     component,
@@ -92,7 +90,7 @@ export async function ${functionName}(deployment: Deployment): Promise<void> {
 ${provisioning}
   const outputs = await deployHostedAgentService(deployment, {
     component: ${JSON.stringify(component)},
-    generatedDirectory: ${generatedProject},
+    generatedDirectory: generatedRoot,
     sourceDirectory: resolve(packageRoot, ${JSON.stringify(container.source ?? source ?? ".")}),
     name: deploymentValue(deployment, "agentName"),
     environment: {
@@ -112,7 +110,7 @@ ${ownsModelDeployment ? `  const persistedDeploymentOutputs = { ...outputs };
   process.env.AZURE_LOCATION = solutionLocation;
 ` : ""}  await deployment.deploy("persist ${escapeTemplateLiteral(component)} deployment outputs", async () => {
     await persistEnvironment(
-      requiredEnv("AZURE_ENV_NAME"),
+      deployment,
       ${ownsModelDeployment ? "persistedDeploymentOutputs" : "outputs"},
     );
   });

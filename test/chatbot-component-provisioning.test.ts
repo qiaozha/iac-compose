@@ -216,17 +216,22 @@ test("chatbot provisioning paths stay within the example", async () => {
     /js-provisioning-lib|provisioningRoot|provisioningDemo|provisioningArtifacts/,
   );
   assert.doesNotMatch(paths, /\.generated\/infra|generated\w+Infra/);
-  for (const component of [
-    "shared",
-    "agent",
-    "frontend",
-    "agent-server",
-    "function-app",
-    "identity",
-    "logic-app",
+  assert.match(paths, /generatedRoot = resolve\(exampleRoot, "\.generated"\)/);
+  assert.doesNotMatch(paths, /stateRoot|\.state/);
+  for (const [name, identifier] of [
+    ["shared", "Shared"],
+    ["agent", "Agent"],
+    ["frontend", "Frontend"],
+    ["agent-server", "AgentServer"],
+    ["function-app", "FunctionApp"],
+    ["logic-app", "LogicApp"],
   ]) {
-    assert.match(paths, new RegExp(`\\.generated/${component}`));
+    assert.match(paths, new RegExp(`generated${identifier}Layer = provisioningLayer\\("${name}"\\)`));
   }
+  assert.match(paths, /generatedIdentityBootstrapLayer = provisioningLayer\(/);
+  assert.match(paths, /generatedIdentityConfigurationLayer = provisioningLayer\(/);
+  assert.match(paths, /entrypoint = `components\/\$\{name\}\/provisioning\.ts`/);
+  assert.match(paths, /outputDirectory: resolve\(generatedRoot, name\)/);
 });
 
 test("runtime configuration does not seed Cognitive Services account keys", async () => {

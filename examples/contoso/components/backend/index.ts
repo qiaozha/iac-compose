@@ -12,8 +12,8 @@ import {
   requiredEnv,
 } from "../../runtime/environment.js";
 import {
-  generatedBackendProject,
-  backendProvisioningEntrypoint,
+  generatedBackendLayer,
+  generatedRoot,
   packageRoot,
 } from "../../runtime/paths.js";
 
@@ -22,8 +22,7 @@ export async function backend(deployment: Deployment): Promise<void> {
   const infrastructureOutputs = await deployment.provision(
     "backend infrastructure",
     {
-      entrypoint: backendProvisioningEntrypoint,
-      outputDirectory: generatedBackendProject,
+      layer: generatedBackendLayer,
       deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-backend`,
       scope: "resourceGroup",
       resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
@@ -33,7 +32,7 @@ export async function backend(deployment: Deployment): Promise<void> {
   );
   await deployment.deploy("persist backend infrastructure", async () => {
     await persistEnvironment(
-      requiredEnv("AZURE_ENV_NAME"),
+      deployment,
       infrastructureOutputs,
     );
   });
@@ -48,7 +47,7 @@ export async function backend(deployment: Deployment): Promise<void> {
     });
   });
   const service = {
-    directory: generatedBackendProject,
+    directory: generatedRoot,
     service: "backend",
     ...(deployment.dryRun
       ? {}
@@ -73,7 +72,7 @@ export async function backend(deployment: Deployment): Promise<void> {
   });
 
   await deployment.deploy("persist backend deployment outputs", async () => {
-    await persistEnvironment(requiredEnv("AZURE_ENV_NAME"), outputs);
+    await persistEnvironment(deployment, outputs);
   });
 }
 

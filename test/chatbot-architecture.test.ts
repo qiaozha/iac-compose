@@ -6,7 +6,7 @@ import { test } from "node:test";
 const chatbotRoot = resolve("examples/chatbot");
 const chatbotSourceRoot = resolve(chatbotRoot, "src");
 
-test("chatbot owns deployment order and generates hook-free azd projects", async () => {
+test("chatbot owns deployment order and generates one hook-free azd project", async () => {
   const sourceFiles = await collectTypeScriptFiles(chatbotSourceRoot);
   const source = (
     await Promise.all(sourceFiles.map((path) => readFile(path, "utf8")))
@@ -28,7 +28,7 @@ test("chatbot owns deployment order and generates hook-free azd projects", async
     runtimeSource,
     /getAccessToken|["']rest["']|graph\.microsoft\.com/,
   );
-  assert.match(source, /createAzdProject/);
+  assert.match(source, /getAzdProject/);
   assert.match(source, /deployAppServiceContainer/);
 });
 

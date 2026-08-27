@@ -215,11 +215,31 @@ deploy-js run ./package/deployment/deploy.ts --environment dev --component front
 ```
 
 `--dry-run` renders provisioning entrypoints and writes their generated Bicep,
-parameter files, and `azure.yaml` manifests. It does not initialize azd
+parameter files, and one `.generated/azure.yaml`. It does not initialize azd
 environments, run cloud commands, or execute application deployment callbacks.
-Shared infrastructure and each provisioning component use one
-`.generated/<component>/` azd project; its `azure.yaml`
-contains both the Bicep `infra` configuration and any deployable `services`.
+Each provisioning component is a named Bicep layer whose files remain under
+`.generated/<component>/`. `deploy-js` preserves authored lifecycle ordering by
+running `azd provision <layer>` at each provisioning step. Infrastructure layers
+and deployable services share the single `.generated/.azure` environment.
+Generated runtime paths expose one `generated<Component>Layer` descriptor, so a
+component passes only `layer` to `deployment.provision`. The descriptor derives
+the standard `components/<component>/provisioning.ts` entrypoint and
+`.generated/<component>` output directory from the component name. The two-phase
+Entra lifecycle uses bootstrap and configuration descriptors that share the same
+`identity` output layer but override the source entrypoint.
+`getAzdProject` memoizes one `AzdProject` per deployment, generated root, and
+environment. Environment state, infrastructure layers, and service manifests
+configure that shared instance instead of constructing a project per component.
+
+Delete all resources tracked by that generated project with:
+
+```bash
+deploy-js down ./package/deployment/.generated --environment dev --force
+```
+
+Cleanup requires an explicit environment, `--force`, and deploy-js ownership
+metadata in `azure.yaml`; it refuses arbitrary azd project directories. Add
+`--purge` to permanently remove resources that Azure otherwise soft-deletes.
 
 `-C <directory>` changes the deployment working directory. A program can use
 `deployment.inDirectory(...)` for a scoped child context.
@@ -238,15 +258,21 @@ can instead provide a compiler command and its artifact directory:
 await deployment.provision("resources", {
   compiler: { command: "pnpm", args: ["run", "compile"] },
   artifactsDirectory: "generated/bicep",
-  outputDirectory: ".generated/infra",
+  outputDirectory: ".generated/resources",
   location: process.env.AZURE_LOCATION,
 });
 ```
 
-The runtime records generated paths in `.deploy-js-generated.json` and only
-replaces those files. Provisioning generates a JSON-compatible `azure.yaml`,
-synchronizes an isolated azd environment, runs `azd provision`, and returns azd
-environment outputs as strings.
+The runtime records all layered artifact paths in the single
+`.generated/.deploy-js-generated.json` manifest and only replaces files under
+the layer being regenerated. Existing per-layer manifests are migrated into
+that root manifest. Standalone provisioning keeps its manifest in its output
+directory. Layered provisioning merges a JSON-compatible
+`.generated/azure.yaml`, synchronizes its shared azd environment, runs
+`azd provision <layer>`, and returns azd environment outputs as strings. For an
+`outputDirectory` directly under `.generated`, the runtime infers the layer name
+from the directory name and `dependsOn` from the order in which provisioning
+calls first appear. Other output directories retain a standalone azd project.
 
 ## Chatbot integration
 
@@ -313,8 +339,8 @@ All implementation is grouped under
   deployment, RBAC, resource-group creation, account lookup, and environment-file
   primitives are exported by `imperative-deploy` itself.
 
-The standalone environment state is stored in ignored
-`examples/chatbot/.state/<environment>.json`. Non-secret environment inputs live
+Deployment outputs and lifecycle values are stored in the shared azd environment
+under `examples/chatbot/.generated/.azure/`. Non-secret environment inputs live
 in `examples/chatbot/src/environments/<environment>.json`.
 
 Prerequisites for a real deployment are Node.js 20.6+, `azd` 1.30.0+, `az`, `pnpm`,
@@ -343,6 +369,7 @@ workflow, and completed lifecycle functions are idempotent.
 npm run deploy-js -- run examples/chatbot/src/deploy.ts -e dev --dry-run
 npm run deploy-js -- run examples/chatbot/src/deploy.ts -e dev
 npm run deploy-js -- run examples/chatbot/src/deploy.ts -e dev --component logic-app
+npm run deploy-js -- down examples/chatbot/.generated -e dev --force
 ```
 
 The chatbot component names are `shared`, `agent`, `agent-server`,

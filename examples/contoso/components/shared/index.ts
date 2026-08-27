@@ -5,8 +5,7 @@ import {
 } from "imperative-deploy";
 import { persistEnvironment, requiredEnv } from "../../runtime/environment.js";
 import {
-  generatedSharedProject,
-  sharedProvisioningEntrypoint,
+  generatedSharedLayer,
 } from "../../runtime/paths.js";
 import { solutionName } from "./provisioning.js";
 import { ensureEntraApplications } from "./identity.js";
@@ -39,8 +38,7 @@ export async function shared(deployment: Deployment): Promise<void> {
     });
   });
   const outputs = await deployment.provision("solution infrastructure", {
-    entrypoint: sharedProvisioningEntrypoint,
-    outputDirectory: generatedSharedProject,
+    layer: generatedSharedLayer,
     deploymentName: `${environment}-${solutionName}`,
     scope: "resourceGroup",
     resourceGroup,
@@ -48,7 +46,7 @@ export async function shared(deployment: Deployment): Promise<void> {
     location: requiredEnv("AZURE_LOCATION"),
   });
   await deployment.deploy("persist solution infrastructure", async () => {
-    await persistEnvironment(environment, outputs);
+    await persistEnvironment(deployment, outputs);
   });
   await ensureEntraApplications(deployment);
 }

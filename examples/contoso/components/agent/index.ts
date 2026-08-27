@@ -9,8 +9,8 @@ import {
   requiredEnv,
 } from "../../runtime/environment.js";
 import {
-  generatedAgentProject,
-  agentProvisioningEntrypoint,
+  generatedAgentLayer,
+  generatedRoot,
   packageRoot,
 } from "../../runtime/paths.js";
 
@@ -20,8 +20,7 @@ export async function agent(deployment: Deployment): Promise<void> {
   const infrastructureOutputs = await deployment.provision(
     "agent infrastructure",
     {
-      entrypoint: agentProvisioningEntrypoint,
-      outputDirectory: generatedAgentProject,
+      layer: generatedAgentLayer,
       deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-agent`,
       scope: "resourceGroup",
       resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
@@ -34,14 +33,14 @@ export async function agent(deployment: Deployment): Promise<void> {
   delete persistedInfrastructureOutputs.AZURE_LOCATION;
   await deployment.deploy("persist agent infrastructure", async () => {
     await persistEnvironment(
-      requiredEnv("AZURE_ENV_NAME"),
+      deployment,
       persistedInfrastructureOutputs,
     );
   });
 
   const outputs = await deployHostedAgentService(deployment, {
     component: "agent",
-    generatedDirectory: generatedAgentProject,
+    generatedDirectory: generatedRoot,
     sourceDirectory: resolve(packageRoot, "components/agent"),
     name: deploymentValue(deployment, "agentName"),
     environment: {
@@ -84,7 +83,7 @@ export async function agent(deployment: Deployment): Promise<void> {
   process.env.AZURE_LOCATION = solutionLocation;
   await deployment.deploy("persist agent deployment outputs", async () => {
     await persistEnvironment(
-      requiredEnv("AZURE_ENV_NAME"),
+      deployment,
       persistedDeploymentOutputs,
     );
   });

@@ -9,9 +9,8 @@ import {
   requiredEnv,
 } from "../../runtime/environment.js";
 import {
-  generatedIdentityProject,
-  identityBootstrapEntrypoint,
-  identityConfigurationEntrypoint,
+  generatedIdentityBootstrapLayer,
+  generatedIdentityConfigurationLayer,
 } from "../../runtime/paths.js";
 
 const identityDeploymentName = "chatbot-identity";
@@ -51,8 +50,7 @@ export async function ensureServerApplication(deployment: Deployment): Promise<s
     ? displayName
     : await resolveApplicationUniqueName(deployment, environment);
   const outputs = await deployment.provision("server application registration", {
-    entrypoint: identityBootstrapEntrypoint,
-    outputDirectory: generatedIdentityProject,
+    layer: generatedIdentityBootstrapLayer,
     deploymentName: identityDeploymentName,
     location: requiredEnv("AZURE_LOCATION"),
     subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
@@ -76,7 +74,7 @@ export async function ensureServerApplication(deployment: Deployment): Promise<s
     return appId;
   }
   const appId = requiredOutput(outputs, "SERVER_AUDIENCE");
-  await persistEnvironment(environment, {
+  await persistEnvironment(deployment, {
     SERVER_AUDIENCE: appId,
     RAG_SERVICE_SCOPE: requiredOutput(outputs, "RAG_SERVICE_SCOPE"),
     SERVER_APPLICATION_UNIQUE_NAME: requiredOutput(
@@ -102,8 +100,7 @@ export async function configureServerApplication(deployment: Deployment): Promis
     environmentValues: Record<string, string>,
   ) =>
     deployment.provision(name, {
-      entrypoint: identityConfigurationEntrypoint,
-      outputDirectory: generatedIdentityProject,
+      layer: generatedIdentityConfigurationLayer,
       deploymentName: identityDeploymentName,
       location: requiredEnv("AZURE_LOCATION"),
       subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
@@ -198,7 +195,7 @@ export async function configureServerApplication(deployment: Deployment): Promis
     true,
     environmentValues,
   );
-  await persistEnvironment(requiredEnv("AZURE_ENV_NAME"), {
+  await persistEnvironment(deployment, {
     SERVER_AUDIENCE: requiredOutput(outputs, "SERVER_AUDIENCE"),
     RAG_SERVICE_SCOPE: requiredOutput(outputs, "RAG_SERVICE_SCOPE"),
     SERVER_APPLICATION_UNIQUE_NAME: requiredOutput(
