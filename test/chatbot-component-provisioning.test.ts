@@ -268,17 +268,17 @@ test("chatbot installs provisioning libraries from GitHub release assets", async
   }
 });
 
-test("chatbot imports imperative-deploy directly through its local package", async () => {
+test("chatbot imports iac-compose directly through its local package", async () => {
   const packageJson = JSON.parse(
     await readFile(resolve("examples/chatbot/package.json"), "utf8"),
   ) as { dependencies?: Record<string, string> };
-  assert.equal(packageJson.dependencies?.["imperative-deploy"], "file:../..");
+  assert.equal(packageJson.dependencies?.["iac-compose"], "file:../..");
 
   const files = await collectTypeScriptFiles(resolve("examples/chatbot/src"));
   const source = (
     await Promise.all(files.map((file) => readFile(file, "utf8")))
   ).join("\n");
-  assert.match(source, /from ["']imperative-deploy["']/);
+  assert.match(source, /from ["']iac-compose["']/);
   assert.doesNotMatch(source, /from ["'][^"']*deployment\.js["']/);
   assert.doesNotMatch(source, /\.\.\/\.\.\/\.\.\/src/);
   await assert.rejects(

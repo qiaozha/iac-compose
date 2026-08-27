@@ -5,8 +5,8 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   createDeployment,
-  deployJsAzdTemplate,
   generateDeploymentCode,
+  iacComposeAzdTemplate,
   loadResourceRequirements,
   validateResourceRequirements,
   type DeploymentProgram,
@@ -60,14 +60,14 @@ async function main(): Promise<void> {
       outputDirectory: options.outputDirectory,
       onProgress: (progress) => {
         console.log(
-          `[deploy-js] GENERATE ${progress.percent}% ${progress.message}`,
+          `[iac-compose] GENERATE ${progress.percent}% ${progress.message}`,
         );
       },
     });
     console.log(
-      `[deploy-js] generated ${result.files.length} files in ${resolve(options.outputDirectory)}`,
+      `[iac-compose] generated ${result.files.length} files in ${resolve(options.outputDirectory)}`,
     );
-    console.log(`[deploy-js] component order: ${result.components.join(" -> ")}`);
+    console.log(`[iac-compose] component order: ${result.components.join(" -> ")}`);
     return;
   }
   if (options.command === "validate") {
@@ -87,12 +87,12 @@ async function main(): Promise<void> {
     });
     for (const provider of result.providers) {
       console.log(
-        `[deploy-js] provider ${provider.namespace}: ${provider.registrationState}`,
+        `[iac-compose] provider ${provider.namespace}: ${provider.registrationState}`,
       );
     }
     for (const role of result.roles) {
       console.log(
-        `[deploy-js] role ${role.role}: ${role.granted ? "granted" : role.present ? "present" : "missing"}`,
+        `[iac-compose] role ${role.role}: ${role.granted ? "granted" : role.present ? "present" : "missing"}`,
       );
     }
     const unregistered = result.providers.filter(
@@ -116,12 +116,12 @@ async function main(): Promise<void> {
       );
     }
     console.log(
-      `[deploy-js] validated deployment principal ${result.principalId} at ${result.scope}`,
+      `[iac-compose] validated deployment principal ${result.principalId} at ${result.scope}`,
     );
     return;
   }
   if (options.command === "down") {
-    await verifyDeployJsProject(options.projectDirectory);
+    await verifyIacComposeProject(options.projectDirectory);
     const deployment = createDeployment({
       projectDirectory: options.projectDirectory,
       environment: options.environment,
@@ -357,7 +357,7 @@ function requiredValue(args: readonly string[], index: number, option: string): 
   return value;
 }
 
-async function verifyDeployJsProject(projectDirectory: string): Promise<void> {
+async function verifyIacComposeProject(projectDirectory: string): Promise<void> {
   let manifest: unknown;
   try {
     manifest = JSON.parse(
@@ -365,18 +365,27 @@ async function verifyDeployJsProject(projectDirectory: string): Promise<void> {
     );
   } catch {
     throw new Error(
-      `Refusing cleanup: '${projectDirectory}' is not a generated deploy-js azd project.`,
+      `Refusing cleanup: '${projectDirectory}' is not a generated iac-compose azd project.`,
     );
   }
   const metadata = readObjectProperty(manifest, "metadata");
   const infra = readObjectProperty(manifest, "infra");
   if (
-    metadata?.template !== deployJsAzdTemplate ||
+    typeof metadata?.template === "string" &&
+    metadata.template.startsWith("imperative-deploy@")
+  ) {
+    throw new Error(
+      `Refusing cleanup: '${projectDirectory}' is a legacy imperative-deploy project. ` +
+        "Regenerate it with iac-compose before cleanup.",
+    );
+  }
+  if (
+    metadata?.template !== iacComposeAzdTemplate ||
     !Array.isArray(infra?.layers) ||
     infra.layers.length === 0
   ) {
     throw new Error(
-      `Refusing cleanup: '${projectDirectory}' is not a layered deploy-js project.`,
+      `Refusing cleanup: '${projectDirectory}' is not a layered iac-compose project.`,
     );
   }
 }
@@ -398,12 +407,12 @@ function readObjectProperty(
 
 function printHelp(): void {
   console.log(`Usage:
-  deploy-js run <deployment.ts> [options]
-  deploy-js generate --resources <requirements.json> --solution <solution.json> [options]
-  deploy-js validate --resources <requirements.json> [options]
-  deploy-js down <generated-project-directory> --environment <name> --force [options]
+  iac-compose <deployment.ts> [options]
+  iac-compose generate --resources <requirements.json> --solution <solution.json> [options]
+  iac-compose validate --resources <requirements.json> [options]
+  iac-compose down <generated-project-directory> --environment <name> --force [options]
 
-Run options:
+Composition options:
   -e, --environment <name>  Select the deployment environment
   -C, --cwd <directory>     Set the deployment working directory
   -c, --component <name>    Run one deployment-defined component
@@ -412,18 +421,18 @@ Run options:
 }
 
 function printDownHelp(): void {
-  console.log(`Usage: deploy-js down <generated-project-directory> --environment <name> --force [options]
+  console.log(`Usage: iac-compose down <generated-project-directory> --environment <name> --force [options]
 
 Options:
   -e, --environment <name>  Select the azd environment to delete
-  -C, --cwd <directory>     Generated deploy-js azd project directory
+  -C, --cwd <directory>     Generated iac-compose azd project directory
       --force               Confirm deletion and disable azd prompts (required)
       --purge               Permanently delete soft-deleted resources
   -h, --help                Show this help`);
 }
 
 function printGenerateHelp(): void {
-  console.log(`Usage: deploy-js generate [options]
+  console.log(`Usage: iac-compose generate [options]
 
 Options:
   -r, --resources <file>     Resource requirements JSON file
@@ -435,7 +444,7 @@ The two input files may also be passed positionally in resources, solution order
 }
 
 function printValidateHelp(): void {
-  console.log(`Usage: deploy-js validate --resources <requirements.json> [options]
+  console.log(`Usage: iac-compose validate --resources <requirements.json> [options]
 
 Options:
   -r, --resources <file>       Resource requirements JSON file
@@ -450,6 +459,6 @@ Options:
 }
 
 main().catch((error: unknown) => {
-  console.error(`[deploy-js] ${error instanceof Error ? error.message : String(error)}`);
+  console.error(`[iac-compose] ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;
 });

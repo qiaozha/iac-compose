@@ -3,7 +3,7 @@ import {
   prepareAppServiceContainer,
   type Deployment,
   waitForHttp,
-} from "imperative-deploy";
+} from "iac-compose";
 import {
   persistEnvironment,
   requiredEnv,

@@ -1,13 +1,17 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 
-const generatedManifest = ".deploy-js-codegen.json";
+const generatedManifest = ".iac-compose-codegen.json";
+const legacyGeneratedManifest = ".deploy-js-codegen.json";
 
 export async function installGeneratedFiles(
   outputDirectory: string,
   files: ReadonlyMap<string, string>,
 ): Promise<void> {
   await mkdir(outputDirectory, { recursive: true });
+  await rejectLegacyGeneratedManifest(
+    resolve(outputDirectory, legacyGeneratedManifest),
+  );
   const manifestPath = resolve(outputDirectory, generatedManifest);
   for (const path of await readGeneratedManifest(manifestPath)) {
     await rm(resolveGeneratedPath(outputDirectory, path), { force: true });
@@ -20,6 +24,19 @@ export async function installGeneratedFiles(
   await writeFile(
     manifestPath,
     `${JSON.stringify({ version: 1, files: [...files.keys()].sort() }, null, 2)}\n`,
+  );
+}
+
+async function rejectLegacyGeneratedManifest(path: string): Promise<void> {
+  try {
+    await readFile(path, "utf8");
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return;
+    throw error;
+  }
+  throw new Error(
+    `Legacy deploy-js generated output detected at '${path}'. ` +
+      "Remove the generated output directory and rerun iac-compose.",
   );
 }
 

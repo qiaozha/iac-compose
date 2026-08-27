@@ -10,13 +10,13 @@ import {
 } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
-import { deployJsAzdTemplate, getAzdProject } from "./azd.js";
+import { getAzdProject, iacComposeAzdTemplate } from "./azd.js";
 import { importTypeScript } from "./typescript-loader.js";
 
 export {
   AzdProject,
   createAzdProject,
-  deployJsAzdTemplate,
+  iacComposeAzdTemplate,
   getAzdProject,
   parseAzdEnvironment,
   type AzdDeployOptions,
@@ -218,7 +218,7 @@ export class Deployment {
         this.projectDirectory,
         options.layer?.outputDirectory ??
           options.outputDirectory ??
-          ".deploy-js/infra",
+          ".iac-compose/infra",
       );
       const layer = inferLayerName(outputDirectory);
       const azdProjectDirectory = layer ? dirname(outputDirectory) : outputDirectory;
@@ -287,7 +287,7 @@ export class Deployment {
               recursive: true,
               force: true,
             });
-        await rm(resolve(azdProjectDirectory, ".deploy-js-project.json"), {
+        await rm(resolve(azdProjectDirectory, ".iac-compose-project.json"), {
           force: true,
         });
       }
@@ -298,7 +298,7 @@ export class Deployment {
           name: sanitizeAzdName(
             options.deploymentName ?? basename(outputDirectory),
           ),
-          ...(layer ? { metadata: { template: deployJsAzdTemplate } } : {}),
+          ...(layer ? { metadata: { template: iacComposeAzdTemplate } } : {}),
           ...(layer ? { requiredVersions: { azd: ">= 1.30.0" } } : {}),
           infra,
         },
@@ -326,13 +326,13 @@ export class Deployment {
   }
 
   async execute(command: Command): Promise<void> {
-    this.#log(`[deploy-js] $ ${formatCommand(command.command, command.args ?? [])}`);
+    this.#log(`[iac-compose] $ ${formatCommand(command.command, command.args ?? [])}`);
     if (this.dryRun) return;
     await this.#execute(command, false, false);
   }
 
   async capture(command: Command): Promise<string> {
-    this.#log(`[deploy-js] $ ${formatCommand(command.command, command.args ?? [])}`);
+    this.#log(`[iac-compose] $ ${formatCommand(command.command, command.args ?? [])}`);
     if (this.dryRun) return "";
     return this.#execute(command, true, false);
   }
@@ -357,15 +357,15 @@ export class Deployment {
     action: () => Promise<void>,
     runInDryRun = false,
   ): Promise<void> {
-    this.#log(`[deploy-js] ${this.dryRun ? "DRY" : "RUN"} ${kind}: ${name}`);
+    this.#log(`[iac-compose] ${this.dryRun ? "DRY" : "RUN"} ${kind}: ${name}`);
     if (this.dryRun && !runInDryRun) return;
     await action();
-    if (!this.dryRun) this.#log(`[deploy-js] DONE ${kind}: ${name}`);
+    if (!this.dryRun) this.#log(`[iac-compose] DONE ${kind}: ${name}`);
   }
 
   async #execute(command: Command, capture = false, log = true): Promise<string> {
     const args = [...(command.args ?? [])];
-    if (log) this.#log(`[deploy-js] $ ${formatCommand(command.command, args)}`);
+    if (log) this.#log(`[iac-compose] $ ${formatCommand(command.command, args)}`);
 
     return new Promise((resolvePromise, reject) => {
       const child = spawn(command.command, args, {
@@ -453,7 +453,10 @@ async function installRenderedFiles(
   generatedFilesRoot = resolve(generatedFilesRoot);
   await mkdir(outputDirectory, { recursive: true });
   await mkdir(generatedFilesRoot, { recursive: true });
-  const manifestPath = resolve(generatedFilesRoot, ".deploy-js-generated.json");
+  await rejectLegacyGeneratedManifest(
+    resolve(generatedFilesRoot, ".deploy-js-generated.json"),
+  );
+  const manifestPath = resolve(generatedFilesRoot, ".iac-compose-generated.json");
   const generatedPaths = new Set(await readGeneratedManifest(manifestPath));
   if (generatedFilesRoot !== outputDirectory) {
     await migrateLayerGeneratedManifests(generatedFilesRoot, generatedPaths);
@@ -494,7 +497,10 @@ async function migrateLayerGeneratedManifests(
   for (const entry of await readdir(generatedFilesRoot, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const layerDirectory = resolve(generatedFilesRoot, entry.name);
-    const manifestPath = resolve(layerDirectory, ".deploy-js-generated.json");
+    await rejectLegacyGeneratedManifest(
+      resolve(layerDirectory, ".deploy-js-generated.json"),
+    );
+    const manifestPath = resolve(layerDirectory, ".iac-compose-generated.json");
     for (const generatedPath of await readGeneratedManifest(manifestPath)) {
       generatedPaths.add(
         relativeGeneratedPath(
@@ -505,6 +511,19 @@ async function migrateLayerGeneratedManifests(
     }
     await rm(manifestPath, { force: true });
   }
+}
+
+async function rejectLegacyGeneratedManifest(path: string): Promise<void> {
+  try {
+    await readFile(path, "utf8");
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return;
+    throw error;
+  }
+  throw new Error(
+    `Legacy deploy-js generated output detected at '${path}'. ` +
+      "Remove the generated output directory and rerun iac-compose.",
+  );
 }
 
 function relativeGeneratedPath(root: string, path: string): string {
@@ -638,7 +657,7 @@ function sanitizeAzdName(value: string): string {
     .replace(/[^a-z0-9-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 63);
-  return sanitized || "deploy-js";
+  return sanitized || "iac-compose";
 }
 
 function formatCommand(command: string, args: readonly string[]): string {

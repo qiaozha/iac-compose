@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { createDeployment } from "../src/index.js";
 
 test("dry run generates layered Bicep in one azd project", async () => {
-  const root = await mkdtemp(join(tmpdir(), "deploy-js-components-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-compose-components-"));
   const outputRoot = resolve(root, ".generated");
   const messages: string[] = [];
   const deployment = createDeployment({
@@ -17,14 +17,14 @@ test("dry run generates layered Bicep in one azd project", async () => {
   });
   await mkdir(resolve(outputRoot, ".azure/dev"), { recursive: true });
   await writeFile(resolve(outputRoot, ".azure/dev/config.json"), "{}\n");
-  await writeFile(resolve(outputRoot, ".deploy-js-project.json"), "{}\n");
+  await writeFile(resolve(outputRoot, ".iac-compose-project.json"), "{}\n");
   for (const component of ["shared", "agent", "agent", "frontend"]) {
     const outputDirectory = resolve(outputRoot, component);
     await mkdir(outputDirectory, { recursive: true });
     await writeFile(resolve(outputDirectory, "azure.yaml"), "{}\n");
     await writeFile(resolve(outputDirectory, "stale.bicep"), "stale\n");
     await writeFile(
-      resolve(outputDirectory, ".deploy-js-generated.json"),
+      resolve(outputDirectory, ".iac-compose-generated.json"),
       `${JSON.stringify(["stale.bicep"], null, 2)}\n`,
     );
     await mkdir(resolve(outputDirectory, ".azure/dev"), { recursive: true });
@@ -50,7 +50,7 @@ test("dry run generates layered Bicep in one azd project", async () => {
     await assert.rejects(access(resolve(outputDirectory, ".azure")));
     await assert.rejects(access(resolve(outputDirectory, "stale.bicep")));
     await assert.rejects(
-      access(resolve(outputDirectory, ".deploy-js-generated.json")),
+      access(resolve(outputDirectory, ".iac-compose-generated.json")),
     );
   }
   await access(resolve(outputRoot, ".azure/dev/config.json"));
@@ -64,7 +64,7 @@ test("dry run generates layered Bicep in one azd project", async () => {
   ];
   assert.deepEqual(
     JSON.parse(
-      await readFile(resolve(outputRoot, ".deploy-js-generated.json"), "utf8"),
+      await readFile(resolve(outputRoot, ".iac-compose-generated.json"), "utf8"),
     ),
     generatedFiles,
   );
@@ -72,7 +72,7 @@ test("dry run generates layered Bicep in one azd project", async () => {
     JSON.parse(await readFile(resolve(outputRoot, "azure.yaml"), "utf8")),
     {
       name: "dev-chatbot",
-      metadata: { template: "imperative-deploy@1.0.0" },
+      metadata: { template: "iac-compose@1.0.0" },
       requiredVersions: { azd: ">= 1.30.0" },
       infra: {
         provider: "bicep",
@@ -95,15 +95,15 @@ test("dry run generates layered Bicep in one azd project", async () => {
     },
   );
   await assert.rejects(
-    access(resolve(outputRoot, ".deploy-js-project.json")),
+    access(resolve(outputRoot, ".iac-compose-project.json")),
   );
   assert.deepEqual(
-    messages.filter((message) => message.startsWith("[deploy-js] $ azd provision")),
+    messages.filter((message) => message.startsWith("[iac-compose] $ azd provision")),
     [
-      "[deploy-js] $ azd provision shared --environment dev --no-prompt",
-      "[deploy-js] $ azd provision agent --environment dev --no-prompt",
-      "[deploy-js] $ azd provision agent --environment dev --no-prompt",
-      "[deploy-js] $ azd provision frontend --environment dev --no-prompt",
+      "[iac-compose] $ azd provision shared --environment dev --no-prompt",
+      "[iac-compose] $ azd provision agent --environment dev --no-prompt",
+      "[iac-compose] $ azd provision agent --environment dev --no-prompt",
+      "[iac-compose] $ azd provision frontend --environment dev --no-prompt",
     ],
   );
 
@@ -134,7 +134,7 @@ test("dry run generates layered Bicep in one azd project", async () => {
   );
   assert.deepEqual(
     JSON.parse(
-      await readFile(resolve(outputRoot, ".deploy-js-generated.json"), "utf8"),
+      await readFile(resolve(outputRoot, ".iac-compose-generated.json"), "utf8"),
     ),
     generatedFiles,
   );

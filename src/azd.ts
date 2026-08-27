@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 import type { Deployment } from "./index.js";
 
-export const deployJsAzdTemplate = "imperative-deploy@1.0.0";
+export const iacComposeAzdTemplate = "iac-compose@1.0.0";
 
 export type AzdEnvironmentValues = Readonly<
   Record<string, string | undefined>
@@ -129,6 +129,7 @@ export class AzdProject {
   async initialize(): Promise<void> {
     if (this.#initialized) return;
 
+    await rejectLegacyAzdProject(this.directory);
     await mkdir(this.directory, { recursive: true });
     const manifest = this.#options.mergeManifest
       ? await mergeAzdManifest(
@@ -179,7 +180,7 @@ export class AzdProject {
     if (Object.keys(values).length === 0) return;
     const valuesFile = resolve(
       this.directory,
-      `.deploy-js-env-${process.pid}-${Date.now()}`,
+      `.iac-compose-env-${process.pid}-${Date.now()}`,
     );
     if (!this.#deployment.dryRun) {
       await writeFile(valuesFile, serializeAzdEnvironment(values), {
@@ -292,6 +293,38 @@ function serializeAzdEnvironment(values: Readonly<Record<string, string>>): stri
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
+}
+
+async function rejectLegacyAzdProject(directory: string): Promise<void> {
+  const legacyMarker = resolve(directory, ".deploy-js-project.json");
+  try {
+    await access(legacyMarker);
+    throw new Error(
+      `Legacy deploy-js generated project detected at '${directory}'. ` +
+        "Remove the generated project directory and rerun iac-compose.",
+    );
+  } catch (error) {
+    if (!isNodeError(error) || error.code !== "ENOENT") throw error;
+  }
+
+  const manifestPath = resolve(directory, "azure.yaml");
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return;
+    throw error;
+  }
+  const metadata = asRecord(asRecord(manifest)?.metadata);
+  if (
+    typeof metadata?.template === "string" &&
+    metadata.template.startsWith("imperative-deploy@")
+  ) {
+    throw new Error(
+      `Legacy imperative-deploy generated project detected at '${directory}'. ` +
+        "Remove the generated project directory and rerun iac-compose.",
+    );
+  }
 }
 
 async function mergeAzdManifest(

@@ -10,7 +10,7 @@ import {
   retry,
   runAzure,
   type Deployment,
-} from "imperative-deploy";
+} from "iac-compose";
 import { requiredEnv } from "../../runtime/environment.js";
 import { botConfigRoot } from "../../runtime/paths.js";
 
@@ -52,7 +52,7 @@ async function seedKeyVault(deployment: Deployment): Promise<void> {
     ]),
   };
   for (const [name, value] of Object.entries(values)) {
-    const path = resolve(tmpdir(), `deploy-js-${randomUUID()}`);
+    const path = resolve(tmpdir(), `iac-compose-${randomUUID()}`);
     await writeFile(path, value.trim(), { mode: 0o600 });
     try {
       await retry(
@@ -197,7 +197,7 @@ export async function uploadBotConfiguration(
     let uploadPath = file;
     if ([".json", ".yaml", ".yml"].includes(extname(file).toLowerCase())) {
       const expanded = expandEnvironment(await readFile(file, "utf8"));
-      uploadPath = resolve(tmpdir(), `deploy-js-config-${randomUUID()}`);
+      uploadPath = resolve(tmpdir(), `iac-compose-config-${randomUUID()}`);
       await writeFile(uploadPath, expanded);
     }
     try {

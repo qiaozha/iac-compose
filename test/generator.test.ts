@@ -19,7 +19,7 @@ import {
 const execFileAsync = promisify(execFile);
 
 test("generates chatbot-style deployment code in dependency order", async () => {
-  const root = await mkdtemp(join(tmpdir(), "deploy-js-generator-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-compose-generator-"));
   const resourcesFile = join(root, "config/generated/resource-requirements.json");
   const solutionFile = join(root, "solution.json");
   const outputDirectory = join(root, "deployment");
@@ -195,7 +195,7 @@ test("generates chatbot-style deployment code in dependency order", async () => 
 });
 
 test("limits generated Azure Bot names to 42 characters", async () => {
-  const root = await mkdtemp(join(tmpdir(), "deploy-js-bot-name-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-compose-bot-name-"));
   const resourcesFile = join(root, "resource-requirements.json");
   const solutionFile = join(root, "solution.json");
   const outputDirectory = join(root, "deployment");
@@ -252,7 +252,7 @@ test("limits generated Azure Bot names to 42 characters", async () => {
 });
 
 test("generate provisions the current Microsoft Entra authentication contract", async () => {
-  const root = await mkdtemp(join(tmpdir(), "deploy-js-service-tree-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-compose-service-tree-"));
   const resourcesFile = join(root, "resource-requirements.json");
   const solutionFile = join(root, "solution.json");
   const outputDirectory = join(root, "deployment");
@@ -344,7 +344,7 @@ test("generate provisions the current Microsoft Entra authentication contract", 
 });
 
 test("authorizes peer identities and generates private App Service networking", async () => {
-  const root = await mkdtemp(join(tmpdir(), "deploy-js-peer-auth-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-compose-peer-auth-"));
   const resourcesFile = join(root, "resource-requirements.json");
   const solutionFile = join(root, "solution.json");
   const outputDirectory = join(root, "deployment");
@@ -509,7 +509,7 @@ test("authorizes peer identities without private App Service networking", () => 
 });
 
 test("reuses a configured Teams app manifest ID", async () => {
-  const root = await mkdtemp(join(tmpdir(), "deploy-js-teams-app-id-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-compose-teams-app-id-"));
   const resourcesFile = join(root, "resource-requirements.json");
   const solutionFile = join(root, "solution.json");
   const outputDirectory = join(root, "deployment");
@@ -570,7 +570,7 @@ test("reuses a configured Teams app manifest ID", async () => {
 });
 
 test("orders hosted agents before application services", async () => {
-  const root = await mkdtemp(join(tmpdir(), "deploy-js-hosted-order-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-compose-hosted-order-"));
   const resourcesFile = join(root, "resource-requirements.json");
   const solutionFile = join(root, "solution.json");
   const outputDirectory = join(root, "deployment");
@@ -622,7 +622,7 @@ test("orders hosted agents before application services", async () => {
 });
 
 test("runs generated code outside the package dependency tree", async () => {
-  const root = await mkdtemp(join(tmpdir(), "deploy-js-out-of-tree-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-compose-out-of-tree-"));
   const resourcesFile = join(root, "resource-requirements.json");
   const solutionFile = join(root, "solution.json");
   const outputDirectory = join(root, "deployment");
@@ -678,7 +678,7 @@ test("runs generated code outside the package dependency tree", async () => {
 });
 
 test("rejects component lifecycle resources that would be dropped", async () => {
-  const root = await mkdtemp(join(tmpdir(), "deploy-js-multiple-containers-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-compose-multiple-containers-"));
   const resourcesFile = join(root, "resource-requirements.json");
   const solutionFile = join(root, "solution.json");
   await writeFile(
@@ -724,7 +724,7 @@ test("rejects component lifecycle resources that would be dropped", async () => 
 });
 
 test("gates generated workflows on interactive Teams connection consent", async () => {
-  const root = await mkdtemp(join(tmpdir(), "deploy-js-teams-connection-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-compose-teams-connection-"));
   const resourcesFile = join(root, "resource-requirements.json");
   const solutionFile = join(root, "solution.json");
   const outputDirectory = join(root, "deployment");

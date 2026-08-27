@@ -9,7 +9,7 @@ export function initialize(data) {
   runtimeUrl = data.runtimeUrl;
 }
 export function resolve(specifier, context, nextResolve) {
-  if (specifier === "imperative-deploy") {
+  if (specifier === "iac-compose") {
     return { url: runtimeUrl, shortCircuit: true };
   }
   return nextResolve(specifier, context);

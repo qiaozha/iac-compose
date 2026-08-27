@@ -305,7 +305,7 @@ test("defers hosted agent identity outputs and access grants", () => {
 });
 
 test("prepares generated container components as source-backed azd services", async () => {
-  const root = await mkdtemp(join(tmpdir(), "deploy-js-resource-component-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-compose-resource-component-"));
   const generatedDirectory = join(root, ".generated");
   const deployment = createDeployment({
     projectDirectory: root,
@@ -353,7 +353,7 @@ test("prepares generated container components as source-backed azd services", as
 });
 
 test("prepares hosted agents with the azd Foundry agent target", async () => {
-  const root = await mkdtemp(join(tmpdir(), "deploy-js-hosted-agent-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-compose-hosted-agent-"));
   const generatedDirectory = join(root, ".generated");
   const deployment = createDeployment({
     projectDirectory: root,
@@ -415,8 +415,8 @@ test("validates hosted agent manifests and active versions", () => {
 });
 
 test("isolates Teams state and rejects unresolved workflow placeholders", async () => {
-  assert.equal(teamsEnvironmentName("dev"), "deploy-js-dev");
-  assert.equal(teamsEnvironmentName("Feature/One"), "deploy-js-feature-one");
+  assert.equal(teamsEnvironmentName("dev"), "iac-compose-dev");
+  assert.equal(teamsEnvironmentName("Feature/One"), "iac-compose-feature-one");
 
   const deployment = createDeployment({
     environment: "dev",

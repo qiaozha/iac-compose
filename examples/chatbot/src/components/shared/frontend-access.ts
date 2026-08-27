@@ -1,4 +1,4 @@
-import { captureAzure, type Deployment } from "imperative-deploy";
+import { captureAzure, type Deployment } from "iac-compose";
 import { requiredEnv } from "../../runtime/environment.js";
 
 interface AccessRestriction {

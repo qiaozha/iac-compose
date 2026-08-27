@@ -152,7 +152,7 @@ export async function generateDeploymentCode(
         type: "module",
         scripts: { typecheck: "tsc -p tsconfig.json --noEmit" },
         dependencies: {
-          "imperative-deploy": `file:${localPackagePath}`,
+          "iac-compose": `file:${localPackagePath}`,
           ...(requirements.resources.length > 0
             ? provisioningDependencies(outputDirectory, repositoryRoot)
             : {}),

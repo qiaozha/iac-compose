@@ -2,7 +2,7 @@ import {
   ensureDeploymentPrincipalRoles,
   ensureResourceGroup,
   type Deployment,
-} from "imperative-deploy";
+} from "iac-compose";
 import { persistEnvironment, requiredEnv } from "../../runtime/environment.js";
 import {
   generatedSharedLayer,

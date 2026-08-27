@@ -126,7 +126,7 @@ export function teamsEnvironmentName(environment = "dev"): string {
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  return `deploy-js-${normalized || "dev"}`;
+  return `iac-compose-${normalized || "dev"}`;
 }
 
 function parseEnvironment(source: string): Record<string, string> {
