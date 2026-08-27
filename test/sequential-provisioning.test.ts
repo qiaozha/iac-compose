@@ -17,6 +17,7 @@ test("dry run generates layered Bicep in one azd project", async () => {
   });
   await mkdir(resolve(outputRoot, ".azure/dev"), { recursive: true });
   await writeFile(resolve(outputRoot, ".azure/dev/config.json"), "{}\n");
+  await writeFile(resolve(outputRoot, ".deploy-js-project.json"), "{}\n");
   for (const component of ["shared", "agent", "agent", "frontend"]) {
     const outputDirectory = resolve(outputRoot, component);
     await mkdir(outputDirectory, { recursive: true });
@@ -71,6 +72,7 @@ test("dry run generates layered Bicep in one azd project", async () => {
     JSON.parse(await readFile(resolve(outputRoot, "azure.yaml"), "utf8")),
     {
       name: "dev-chatbot",
+      metadata: { template: "imperative-deploy@1.0.0" },
       requiredVersions: { azd: ">= 1.30.0" },
       infra: {
         provider: "bicep",
@@ -92,11 +94,8 @@ test("dry run generates layered Bicep in one azd project", async () => {
       },
     },
   );
-  assert.deepEqual(
-    JSON.parse(
-      await readFile(resolve(outputRoot, ".deploy-js-project.json"), "utf8"),
-    ),
-    { schemaVersion: "1.0", kind: "layered-azd-project" },
+  await assert.rejects(
+    access(resolve(outputRoot, ".deploy-js-project.json")),
   );
   assert.deepEqual(
     messages.filter((message) => message.startsWith("[deploy-js] $ azd provision")),

@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 
 import type { Deployment } from "./index.js";
 
+export const deployJsAzdTemplate = "imperative-deploy@1.0.0";
+
 export type AzdEnvironmentValues = Readonly<
   Record<string, string | undefined>
 >;

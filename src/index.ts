@@ -10,12 +10,13 @@ import {
 } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
-import { getAzdProject } from "./azd.js";
+import { deployJsAzdTemplate, getAzdProject } from "./azd.js";
 import { importTypeScript } from "./typescript-loader.js";
 
 export {
   AzdProject,
   createAzdProject,
+  deployJsAzdTemplate,
   getAzdProject,
   parseAzdEnvironment,
   type AzdDeployOptions,
@@ -286,11 +287,9 @@ export class Deployment {
               recursive: true,
               force: true,
             });
-        await writeFile(
-          resolve(azdProjectDirectory, ".deploy-js-project.json"),
-          `${JSON.stringify({ schemaVersion: "1.0", kind: "layered-azd-project" }, null, 2)}\n`,
-          { mode: 0o600 },
-        );
+        await rm(resolve(azdProjectDirectory, ".deploy-js-project.json"), {
+          force: true,
+        });
       }
       const project = getAzdProject(this, {
         directory: azdProjectDirectory,
@@ -299,6 +298,7 @@ export class Deployment {
           name: sanitizeAzdName(
             options.deploymentName ?? basename(outputDirectory),
           ),
+          ...(layer ? { metadata: { template: deployJsAzdTemplate } } : {}),
           ...(layer ? { requiredVersions: { azd: ">= 1.30.0" } } : {}),
           infra,
         },

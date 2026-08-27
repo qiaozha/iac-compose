@@ -6,6 +6,8 @@ import { promisify } from "node:util";
 import { execFile } from "node:child_process";
 import { test } from "node:test";
 
+import { deployJsAzdTemplate } from "../src/index.js";
+
 const execFileAsync = promisify(execFile);
 
 test("down only deletes a marked generated project with explicit confirmation", async () => {
@@ -16,12 +18,15 @@ test("down only deletes a marked generated project with explicit confirmation", 
   await mkdir(projectDirectory);
   await mkdir(bin);
   await writeFile(
-    join(projectDirectory, ".deploy-js-project.json"),
-    JSON.stringify({ schemaVersion: "1.0", kind: "layered-azd-project" }),
-  );
-  await writeFile(
     join(projectDirectory, "azure.yaml"),
-    JSON.stringify({ name: "imperative-deploy-test" }),
+    JSON.stringify({
+      name: "imperative-deploy-test",
+      metadata: { template: deployJsAzdTemplate },
+      infra: {
+        provider: "bicep",
+        layers: [{ name: "shared", path: "./shared" }],
+      },
+    }),
   );
   const fakeAzd = join(bin, "azd");
   await writeFile(

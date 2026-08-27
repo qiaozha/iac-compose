@@ -237,8 +237,8 @@ Delete all resources tracked by that generated project with:
 deploy-js down ./package/deployment/.generated --environment dev --force
 ```
 
-Cleanup requires an explicit environment, `--force`, and the ownership marker
-written by `deploy-js`; it refuses arbitrary azd project directories. Add
+Cleanup requires an explicit environment, `--force`, and deploy-js ownership
+metadata in `azure.yaml`; it refuses arbitrary azd project directories. Add
 `--purge` to permanently remove resources that Azure otherwise soft-deletes.
 
 `-C <directory>` changes the deployment working directory. A program can use

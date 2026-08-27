@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   createDeployment,
+  deployJsAzdTemplate,
   generateDeploymentCode,
   loadResourceRequirements,
   validateResourceRequirements,
@@ -357,28 +358,42 @@ function requiredValue(args: readonly string[], index: number, option: string): 
 }
 
 async function verifyDeployJsProject(projectDirectory: string): Promise<void> {
-  const markerPath = resolve(projectDirectory, ".deploy-js-project.json");
-  let marker: unknown;
+  let manifest: unknown;
   try {
-    marker = JSON.parse(await readFile(markerPath, "utf8"));
-    await readFile(resolve(projectDirectory, "azure.yaml"), "utf8");
+    manifest = JSON.parse(
+      await readFile(resolve(projectDirectory, "azure.yaml"), "utf8"),
+    );
   } catch {
     throw new Error(
       `Refusing cleanup: '${projectDirectory}' is not a generated deploy-js azd project.`,
     );
   }
+  const metadata = readObjectProperty(manifest, "metadata");
+  const infra = readObjectProperty(manifest, "infra");
   if (
-    typeof marker !== "object" ||
-    marker === null ||
-    !("schemaVersion" in marker) ||
-    marker.schemaVersion !== "1.0" ||
-    !("kind" in marker) ||
-    marker.kind !== "layered-azd-project"
+    metadata?.template !== deployJsAzdTemplate ||
+    !Array.isArray(infra?.layers) ||
+    infra.layers.length === 0
   ) {
     throw new Error(
-      `Refusing cleanup: '${projectDirectory}' has an invalid deploy-js project marker.`,
+      `Refusing cleanup: '${projectDirectory}' is not a layered deploy-js project.`,
     );
   }
+}
+
+function readObjectProperty(
+  value: unknown,
+  property: string,
+): Record<string, unknown> | undefined {
+  if (typeof value !== "object" || value === null || !(property in value)) {
+    return undefined;
+  }
+  const propertyValue = (value as Record<string, unknown>)[property];
+  return typeof propertyValue === "object" &&
+    propertyValue !== null &&
+    !Array.isArray(propertyValue)
+    ? (propertyValue as Record<string, unknown>)
+    : undefined;
 }
 
 function printHelp(): void {
