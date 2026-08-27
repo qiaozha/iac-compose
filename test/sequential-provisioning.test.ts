@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
@@ -17,6 +17,8 @@ test("dry run generates layered Bicep in one azd project", async () => {
   });
   for (const component of ["shared", "agent", "agent", "frontend"]) {
     const outputDirectory = resolve(outputRoot, component);
+    await mkdir(outputDirectory, { recursive: true });
+    await writeFile(resolve(outputDirectory, "azure.yaml"), "{}\n");
     await deployment.provision(`${component} infrastructure`, {
       entrypoint: resolve(
         `examples/chatbot/src/components/${component}/provisioning.ts`,
@@ -32,6 +34,7 @@ test("dry run generates layered Bicep in one azd project", async () => {
     assert.ok(
       (await readFile(resolve(outputDirectory, "main.bicepparam"), "utf8")).trim(),
     );
+    await assert.rejects(access(resolve(outputDirectory, "azure.yaml")));
   }
   assert.deepEqual(
     JSON.parse(await readFile(resolve(outputRoot, "azure.yaml"), "utf8")),

@@ -258,6 +258,7 @@ export class Deployment {
             module,
           };
       if (layer) {
+            await rm(resolve(outputDirectory, "azure.yaml"), { force: true });
         await writeFile(
           resolve(azdProjectDirectory, ".deploy-js-project.json"),
           `${JSON.stringify({ schemaVersion: "1.0", kind: "layered-azd-project" }, null, 2)}\n`,
