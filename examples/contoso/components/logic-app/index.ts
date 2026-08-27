@@ -26,8 +26,6 @@ export async function logicApp(deployment: Deployment): Promise<void> {
     {
       entrypoint: logicAppProvisioningEntrypoint,
       outputDirectory: generatedLogicAppProject,
-      layer: "logic-app",
-      dependsOn: ["shared"],
       deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-logic-app`,
       scope: "resourceGroup",
       resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),

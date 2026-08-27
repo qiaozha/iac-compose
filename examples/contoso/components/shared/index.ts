@@ -41,7 +41,6 @@ export async function shared(deployment: Deployment): Promise<void> {
   const outputs = await deployment.provision("solution infrastructure", {
     entrypoint: sharedProvisioningEntrypoint,
     outputDirectory: generatedSharedProject,
-    layer: "shared",
     deploymentName: `${environment}-${solutionName}`,
     scope: "resourceGroup",
     resourceGroup,

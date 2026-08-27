@@ -42,8 +42,6 @@ export function componentProvisioningBlock(
     {
       entrypoint: ${entrypoint},
       outputDirectory: ${generatedProject},
-      layer: ${JSON.stringify(component)},
-      dependsOn: ["shared"],
       deploymentName: \`\${requiredEnv("AZURE_ENV_NAME")}-${escapeTemplateLiteral(component)}\`,
       scope: "resourceGroup",
       resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),

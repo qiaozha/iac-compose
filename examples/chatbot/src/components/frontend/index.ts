@@ -26,8 +26,6 @@ export async function frontend(deployment: Deployment): Promise<void> {
   const outputs = await deployment.provision("Teams bot frontend infrastructure", {
     entrypoint: frontendProvisioningEntrypoint,
     outputDirectory: generatedFrontendProject,
-    layer: "frontend",
-    dependsOn: ["shared"],
     deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-frontend`,
     scope: "resourceGroup",
     resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),

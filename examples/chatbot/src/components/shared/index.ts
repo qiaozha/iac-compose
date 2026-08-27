@@ -37,8 +37,6 @@ export async function shared(deployment: Deployment): Promise<void> {
   const outputs = await deployment.provision("shared chatbot infrastructure", {
     entrypoint: sharedProvisioningEntrypoint,
     outputDirectory: generatedSharedProject,
-    layer: "shared",
-    dependsOn: ["identity"],
     deploymentName: `${environment}-shared`,
     scope: "resourceGroup",
     resourceGroup,

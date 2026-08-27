@@ -96,8 +96,6 @@ export async function ensureEntraApplications(
   const outputs = await deployment.provision("server application registration", {
     entrypoint: identityBootstrapEntrypoint,
     outputDirectory: generatedIdentityProject,
-    layer: "identity",
-    dependsOn: ["shared"],
     deploymentName: identityDeploymentName,
     scope: "subscription",
     subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
@@ -195,8 +193,6 @@ export async function configureEntraApplications(
   ) => deployment.provision(name, {
     entrypoint: identityConfigurationEntrypoint,
     outputDirectory: generatedIdentityProject,
-    layer: "identity",
-    dependsOn: ["shared"],
     deploymentName: identityDeploymentName,
     scope: "subscription",
     subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),

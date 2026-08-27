@@ -15,15 +15,13 @@ test("dry run generates layered Bicep in one azd project", async () => {
     environment: "dev",
     log: (message) => messages.push(message),
   });
-  for (const component of ["shared", "agent", "frontend"]) {
+  for (const component of ["shared", "agent", "agent", "frontend"]) {
     const outputDirectory = resolve(outputRoot, component);
     await deployment.provision(`${component} infrastructure`, {
       entrypoint: resolve(
         `examples/chatbot/src/components/${component}/provisioning.ts`,
       ),
       outputDirectory,
-      layer: component,
-      dependsOn: component === "shared" ? [] : ["shared"],
       deploymentName: "dev-chatbot",
       scope: "resourceGroup",
       resourceGroup: "rg-test",
@@ -54,7 +52,7 @@ test("dry run generates layered Bicep in one azd project", async () => {
             name: "frontend",
             path: "./frontend",
             module: "main",
-            dependsOn: ["shared"],
+            dependsOn: ["agent"],
           },
         ],
       },
@@ -71,7 +69,32 @@ test("dry run generates layered Bicep in one azd project", async () => {
     [
       "[deploy-js] $ azd provision shared --environment dev --no-prompt",
       "[deploy-js] $ azd provision agent --environment dev --no-prompt",
+      "[deploy-js] $ azd provision agent --environment dev --no-prompt",
       "[deploy-js] $ azd provision frontend --environment dev --no-prompt",
     ],
+  );
+
+  const componentDeployment = createDeployment({
+    dryRun: true,
+    environment: "dev",
+    log: () => {},
+  });
+  await componentDeployment.provision("frontend infrastructure", {
+    entrypoint: resolve(
+      "examples/chatbot/src/components/frontend/provisioning.ts",
+    ),
+    outputDirectory: resolve(outputRoot, "frontend"),
+    deploymentName: "dev-chatbot",
+    scope: "resourceGroup",
+    resourceGroup: "rg-test",
+    subscription: "00000000-0000-0000-0000-000000000000",
+    location: "westus2",
+  });
+  const rerunManifest = JSON.parse(
+    await readFile(resolve(outputRoot, "azure.yaml"), "utf8"),
+  ) as { infra: { layers: Array<{ name: string; dependsOn?: string[] }> } };
+  assert.deepEqual(
+    rerunManifest.infra.layers.find(({ name }) => name === "frontend")?.dependsOn,
+    ["agent"],
   );
 });

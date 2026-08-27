@@ -240,8 +240,6 @@ function provisionLogicApp(
   return deployment.provision("Logic App resources and workflow", {
     entrypoint: logicAppProvisioningEntrypoint,
     outputDirectory: generatedLogicAppProject,
-    layer: "logic-app",
-    dependsOn: ["shared"],
     deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-logic-app`,
     scope: "resourceGroup",
     resourceGroup,

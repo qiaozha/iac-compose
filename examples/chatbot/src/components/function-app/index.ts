@@ -19,8 +19,6 @@ export async function functionApp(deployment: Deployment): Promise<void> {
   const outputs = await deployment.provision("Function App infrastructure", {
     entrypoint: functionAppProvisioningEntrypoint,
     outputDirectory: generatedFunctionAppProject,
-    layer: "function-app",
-    dependsOn: ["shared"],
     deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-function-app`,
     scope: "resourceGroup",
     resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),

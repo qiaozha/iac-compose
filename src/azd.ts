@@ -41,8 +41,10 @@ export class AzdProject {
       "dev";
   }
 
-  async provision(layer?: string): Promise<Record<string, string>> {
+  async provision(): Promise<Record<string, string>> {
     await this.initialize();
+    const layers = asLayers(asRecord(this.#options.manifest.infra)?.layers);
+    const layer = layers?.length === 1 ? layers[0]!.name : undefined;
     const args = ["provision"];
     if (layer) args.push(layer);
     args.push("--environment", this.environment, "--no-prompt");
@@ -293,7 +295,7 @@ function mergeManifestInfra(
     for (const layer of manifestLayers ?? []) {
       const index = layers.findIndex((candidate) => candidate.name === layer.name);
       if (index < 0) layers.push(layer);
-      else layers[index] = layer;
+      else layers[index] = { ...layers[index], ...layer };
     }
     delete infra.path;
     delete infra.module;

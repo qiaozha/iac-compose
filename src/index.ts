@@ -123,8 +123,6 @@ export interface ProvisionOptions {
   compiler?: Command;
   artifactsDirectory?: string;
   outputDirectory?: string;
-  layer?: string;
-  dependsOn?: readonly string[];
   templateFile?: string;
   parametersFile?: string;
   deploymentName?: string;
@@ -168,6 +166,7 @@ export class Deployment {
   readonly dryRun: boolean;
 
   readonly #log: (message: string) => void;
+  readonly #layersByProject = new Map<string, string[]>();
 
   constructor(options: DeploymentOptions = {}) {
     this.projectDirectory = resolve(options.projectDirectory ?? process.cwd());
@@ -235,15 +234,12 @@ export class Deployment {
           : {}),
         ...options.environmentValues,
       };
-      if (options.dependsOn && !options.layer) {
-        throw new Error("Provisioning dependencies require a layer name.");
-      }
       const module = basename(templateFile, extname(templateFile));
-      const layer = options.layer?.trim();
-      if (options.layer !== undefined && !layer) {
-        throw new Error("Provisioning layer name cannot be empty.");
-      }
+      const layer = inferLayerName(outputDirectory);
       const azdProjectDirectory = layer ? dirname(outputDirectory) : outputDirectory;
+      const dependsOn = layer
+        ? this.#inferLayerDependencies(azdProjectDirectory, layer)
+        : [];
       const infra = layer
         ? {
             provider: "bicep",
@@ -252,9 +248,7 @@ export class Deployment {
                 name: layer,
                 path: relativeAzdPath(azdProjectDirectory, outputDirectory),
                 module,
-                ...(options.dependsOn?.length
-                  ? { dependsOn: [...options.dependsOn] }
-                  : {}),
+                ...(dependsOn.length ? { dependsOn } : {}),
               },
             ],
           }
@@ -285,7 +279,7 @@ export class Deployment {
         location: options.location ?? process.env.AZURE_LOCATION,
         values: environmentValues,
       });
-      outputs = await project.provision(layer);
+      outputs = await project.provision();
     }, true);
     return outputs;
   }
@@ -313,6 +307,20 @@ export class Deployment {
     this.#log(`[deploy-js] $ ${formatCommand(command.command, command.args ?? [])}`);
     if (this.dryRun) return "";
     return this.#execute(command, true, false);
+  }
+
+  #inferLayerDependencies(projectDirectory: string, layer: string): string[] {
+    const layers = this.#layersByProject.get(projectDirectory) ?? [];
+    if (!this.#layersByProject.has(projectDirectory)) {
+      this.#layersByProject.set(projectDirectory, layers);
+    }
+    const existingIndex = layers.indexOf(layer);
+    if (existingIndex >= 0) {
+      return existingIndex === 0 ? [] : [layers[existingIndex - 1]!];
+    }
+    const dependsOn = layers.length > 0 ? [layers[layers.length - 1]!] : [];
+    layers.push(layer);
+    return dependsOn;
   }
 
   async #step(
@@ -364,6 +372,12 @@ export class Deployment {
       });
     });
   }
+}
+
+function inferLayerName(outputDirectory: string): string | undefined {
+  return basename(dirname(outputDirectory)) === ".generated"
+    ? basename(outputDirectory)
+    : undefined;
 }
 
 function relativeAzdPath(projectDirectory: string, outputDirectory: string): string {

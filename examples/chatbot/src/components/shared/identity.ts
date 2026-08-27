@@ -53,7 +53,6 @@ export async function ensureServerApplication(deployment: Deployment): Promise<s
   const outputs = await deployment.provision("server application registration", {
     entrypoint: identityBootstrapEntrypoint,
     outputDirectory: generatedIdentityProject,
-    layer: "identity",
     deploymentName: identityDeploymentName,
     location: requiredEnv("AZURE_LOCATION"),
     subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
@@ -105,7 +104,6 @@ export async function configureServerApplication(deployment: Deployment): Promis
     deployment.provision(name, {
       entrypoint: identityConfigurationEntrypoint,
       outputDirectory: generatedIdentityProject,
-      layer: "identity",
       deploymentName: identityDeploymentName,
       location: requiredEnv("AZURE_LOCATION"),
       subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),

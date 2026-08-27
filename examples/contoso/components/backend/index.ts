@@ -25,8 +25,6 @@ export async function backend(deployment: Deployment): Promise<void> {
     {
       entrypoint: backendProvisioningEntrypoint,
       outputDirectory: generatedBackendProject,
-      layer: "backend",
-      dependsOn: ["shared"],
       deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-backend`,
       scope: "resourceGroup",
       resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
