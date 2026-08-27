@@ -184,7 +184,7 @@ export async function ${functionName}(deployment: Deployment): Promise<void> {
   const outputs: Record<string, string> = {};
 ${provisioning}
 ${entraConfigurationBlock}${serviceTagIngressBlock}${privateEndpointBlock}  const service = {
-  directory: generatedRoot,
+    directory: generatedRoot,
     service: ${JSON.stringify(component)},
     ...(deployment.dryRun
       ? {}

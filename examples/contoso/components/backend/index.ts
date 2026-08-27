@@ -12,9 +12,8 @@ import {
   requiredEnv,
 } from "../../runtime/environment.js";
 import {
-  generatedBackendProject,
+  generatedBackendLayer,
   generatedRoot,
-  backendProvisioningEntrypoint,
   packageRoot,
 } from "../../runtime/paths.js";
 
@@ -23,8 +22,7 @@ export async function backend(deployment: Deployment): Promise<void> {
   const infrastructureOutputs = await deployment.provision(
     "backend infrastructure",
     {
-      entrypoint: backendProvisioningEntrypoint,
-      outputDirectory: generatedBackendProject,
+      layer: generatedBackendLayer,
       deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-backend`,
       scope: "resourceGroup",
       resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),

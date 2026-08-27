@@ -10,16 +10,14 @@ import {
 } from "../../runtime/environment.js";
 import {
   agentRoot,
-  agentServerProvisioningEntrypoint,
-  generatedAgentServerProject,
+  generatedAgentServerLayer,
   generatedRoot,
 } from "../../runtime/paths.js";
 import { uploadBotConfiguration } from "../shared/configuration.js";
 
 export async function agentServer(deployment: Deployment): Promise<void> {
   const outputs = await deployment.provision("FastAPI agent server infrastructure", {
-    entrypoint: agentServerProvisioningEntrypoint,
-    outputDirectory: generatedAgentServerProject,
+    layer: generatedAgentServerLayer,
     deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-agent-server`,
     scope: "resourceGroup",
     resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),

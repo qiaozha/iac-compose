@@ -6,8 +6,7 @@ import {
 import { persistEnvironment, requiredEnv } from "../../runtime/environment.js";
 import { ensureServerApplication } from "./identity.js";
 import {
-  generatedSharedProject,
-  sharedProvisioningEntrypoint,
+  generatedSharedLayer,
 } from "../../runtime/paths.js";
 
 export async function shared(deployment: Deployment): Promise<void> {
@@ -35,8 +34,7 @@ export async function shared(deployment: Deployment): Promise<void> {
   });
 
   const outputs = await deployment.provision("shared chatbot infrastructure", {
-    entrypoint: sharedProvisioningEntrypoint,
-    outputDirectory: generatedSharedProject,
+    layer: generatedSharedLayer,
     deploymentName: `${environment}-shared`,
     scope: "resourceGroup",
     resourceGroup,

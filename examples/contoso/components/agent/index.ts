@@ -9,9 +9,8 @@ import {
   requiredEnv,
 } from "../../runtime/environment.js";
 import {
-  generatedAgentProject,
+  generatedAgentLayer,
   generatedRoot,
-  agentProvisioningEntrypoint,
   packageRoot,
 } from "../../runtime/paths.js";
 
@@ -21,8 +20,7 @@ export async function agent(deployment: Deployment): Promise<void> {
   const infrastructureOutputs = await deployment.provision(
     "agent infrastructure",
     {
-      entrypoint: agentProvisioningEntrypoint,
-      outputDirectory: generatedAgentProject,
+      layer: generatedAgentLayer,
       deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-agent`,
       scope: "resourceGroup",
       resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),

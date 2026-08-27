@@ -179,10 +179,15 @@ test("generates chatbot-style deployment code in dependency order", async () => 
     /deploymentValue\(deployment, "applicationInsightsConnectionString"\)/,
   );
   assert.match(backend, /defaultAction: "Allow"/);
+  assert.match(sharedLifecycle, /layer: generatedSharedLayer/);
+  assert.match(backend, /layer: generatedBackendLayer/);
   assert.doesNotMatch(
     sharedLifecycle + backend,
-    /azdProjectDirectory|\n\s+(?:layer|dependsOn):/,
+    /azdProjectDirectory|entrypoint:|outputDirectory:|dependsOn:/,
   );
+  assert.match(runtimePaths, /generatedSharedLayer = provisioningLayer\("shared"\)/);
+  assert.match(runtimePaths, /generatedBackendLayer = provisioningLayer\("backend"\)/);
+  assert.doesNotMatch(runtimePaths, /generated\w+Project|ProvisioningEntrypoint/);
   assert.match(backend, /directory: generatedRoot/);
   assert.match(runtimeEnvironment, /\.getValues\(\)/);
   assert.match(runtimeEnvironment, /\.setValues\(values\)/);

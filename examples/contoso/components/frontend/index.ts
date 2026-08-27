@@ -15,9 +15,8 @@ import {
 } from "../../runtime/environment.js";
 import { configureEntraApplications } from "../shared/identity.js";
 import {
-  generatedFrontendProject,
+  generatedFrontendLayer,
   generatedRoot,
-  frontendProvisioningEntrypoint,
   packageRoot,
 } from "../../runtime/paths.js";
 
@@ -26,8 +25,7 @@ export async function frontend(deployment: Deployment): Promise<void> {
   const infrastructureOutputs = await deployment.provision(
     "frontend infrastructure",
     {
-      entrypoint: frontendProvisioningEntrypoint,
-      outputDirectory: generatedFrontendProject,
+      layer: generatedFrontendLayer,
       deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-frontend`,
       scope: "resourceGroup",
       resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),

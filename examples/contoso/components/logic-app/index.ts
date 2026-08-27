@@ -8,8 +8,7 @@ import {
   requiredEnv,
 } from "../../runtime/environment.js";
 import {
-  generatedLogicAppProject,
-  logicAppProvisioningEntrypoint,
+  generatedLogicAppLayer,
 } from "../../runtime/paths.js";
 
 export async function logicApp(deployment: Deployment): Promise<void> {
@@ -24,8 +23,7 @@ export async function logicApp(deployment: Deployment): Promise<void> {
   const infrastructureOutputs = await deployment.provision(
     "logic-app infrastructure",
     {
-      entrypoint: logicAppProvisioningEntrypoint,
-      outputDirectory: generatedLogicAppProject,
+      layer: generatedLogicAppLayer,
       deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-logic-app`,
       scope: "resourceGroup",
       resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),

@@ -13,9 +13,8 @@ import {
   requiredEnv,
 } from "../../runtime/environment.js";
 import {
-  frontendProvisioningEntrypoint,
   frontendRoot,
-  generatedFrontendProject,
+  generatedFrontendLayer,
   generatedRoot,
 } from "../../runtime/paths.js";
 import { ensureFrontendAccessRestrictions } from "../shared/frontend-access.js";
@@ -24,8 +23,7 @@ const teamsEnvironment = "deploy-js";
 
 export async function frontend(deployment: Deployment): Promise<void> {
   const outputs = await deployment.provision("Teams bot frontend infrastructure", {
-    entrypoint: frontendProvisioningEntrypoint,
-    outputDirectory: generatedFrontendProject,
+    layer: generatedFrontendLayer,
     deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-frontend`,
     scope: "resourceGroup",
     resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),

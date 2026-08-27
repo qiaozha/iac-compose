@@ -221,6 +221,12 @@ Each provisioning component is a named Bicep layer whose files remain under
 `.generated/<component>/`. `deploy-js` preserves authored lifecycle ordering by
 running `azd provision <layer>` at each provisioning step. Infrastructure layers
 and deployable services share the single `.generated/.azure` environment.
+Generated runtime paths expose one `generated<Component>Layer` descriptor, so a
+component passes only `layer` to `deployment.provision`. The descriptor derives
+the standard `components/<component>/provisioning.ts` entrypoint and
+`.generated/<component>` output directory from the component name. The two-phase
+Entra lifecycle uses bootstrap and configuration descriptors that share the same
+`identity` output layer but override the source entrypoint.
 
 Delete all resources tracked by that generated project with:
 

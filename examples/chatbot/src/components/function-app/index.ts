@@ -9,16 +9,14 @@ import {
   requiredEnv,
 } from "../../runtime/environment.js";
 import {
-  functionAppProvisioningEntrypoint,
   functionAppRoot,
-  generatedFunctionAppProject,
+  generatedFunctionAppLayer,
   generatedRoot,
 } from "../../runtime/paths.js";
 
 export async function functionApp(deployment: Deployment): Promise<void> {
   const outputs = await deployment.provision("Function App infrastructure", {
-    entrypoint: functionAppProvisioningEntrypoint,
-    outputDirectory: generatedFunctionAppProject,
+    layer: generatedFunctionAppLayer,
     deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-function-app`,
     scope: "resourceGroup",
     resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),

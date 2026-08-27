@@ -1,8 +1,5 @@
 import type { ResourceRequirement } from "../../contracts/deployment.js";
-import {
-  generatedProjectName,
-  provisioningEntrypointName,
-} from "../names.js";
+import { generatedLayerName } from "../names.js";
 
 const outputBindingPattern = /\$\{output\.([A-Za-z][A-Za-z0-9_]*)\}/g;
 
@@ -13,8 +10,7 @@ export function componentProvisioningBlock(
   resources: readonly ResourceRequirement[] = [],
 ): string {
   if (!hasProvisioning) return "";
-  const entrypoint = provisioningEntrypointName(component);
-  const generatedProject = generatedProjectName(component);
+  const generatedLayer = generatedLayerName(component);
   const ownsModelDeployment = resources.some(
     (resource) => resource.kind === "model-deployment",
   );
@@ -40,8 +36,7 @@ export function componentProvisioningBlock(
   return `${locationDeclaration}  const infrastructureOutputs = await deployment.provision(
     ${JSON.stringify(`${component} infrastructure`)},
     {
-      entrypoint: ${entrypoint},
-      outputDirectory: ${generatedProject},
+      layer: ${generatedLayer},
       deploymentName: \`\${requiredEnv("AZURE_ENV_NAME")}-${escapeTemplateLiteral(component)}\`,
       scope: "resourceGroup",
       resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
@@ -64,9 +59,8 @@ export function componentPathImports(
   includePackageRoot: boolean,
 ): string {
   return [
-    ...(hasProvisioning ? [`  ${generatedProjectName(component)},`] : []),
+    ...(hasProvisioning ? [`  ${generatedLayerName(component)},`] : []),
     ...(includePackageRoot ? ["  generatedRoot,"] : []),
-    ...(hasProvisioning ? [`  ${provisioningEntrypointName(component)},`] : []),
     ...(includePackageRoot ? ["  packageRoot,"] : []),
   ].join("\n");
 }

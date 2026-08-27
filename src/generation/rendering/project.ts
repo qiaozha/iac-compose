@@ -1,9 +1,6 @@
 import { sep } from "node:path";
 
-import {
-  generatedProjectName,
-  provisioningEntrypointName,
-} from "./names.js";
+import { generatedLayerName } from "./names.js";
 
 export function renderDeploymentSource(
   components: readonly string[],
@@ -55,40 +52,42 @@ ${steps}
 
 export function renderRuntimePathsSource(
   packagePath: string,
-  owners: readonly string[],
   provisioningOwners: readonly string[],
   hasEntra: boolean,
 ): string {
-  const generatedProjects = owners
+  const generatedLayers = provisioningOwners
     .map(
       (owner) =>
-        `export const ${generatedProjectName(owner)} = resolve(generatedRoot, ${JSON.stringify(owner)});`,
-    )
-    .join("\n");
-  const provisioningEntrypoints = provisioningOwners
-    .map(
-      (owner) =>
-        `export const ${provisioningEntrypointName(owner)} = resolve(\n  deploymentRoot,\n  ${JSON.stringify(`components/${owner}/provisioning.ts`)},\n);`,
+        `export const ${generatedLayerName(owner)} = provisioningLayer(${JSON.stringify(owner)});`,
     )
     .join("\n");
   return `import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { ProvisioningLayer } from "imperative-deploy";
 
 export const deploymentRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const packageRoot = resolve(deploymentRoot, ${JSON.stringify(packagePath.split(sep).join("/"))});
 export const generatedRoot = resolve(deploymentRoot, ".generated");
 export const environmentRoot = resolve(deploymentRoot, "environments");
-${generatedProjects}
-${provisioningEntrypoints}
-${hasEntra ? `export const generatedIdentityProject = resolve(generatedRoot, "identity");
-export const identityBootstrapEntrypoint = resolve(
-  deploymentRoot,
+${generatedLayers}
+${hasEntra ? `export const generatedIdentityBootstrapLayer = provisioningLayer(
+  "identity",
   "components/shared/identity-bootstrap.ts",
 );
-export const identityConfigurationEntrypoint = resolve(
-  deploymentRoot,
+export const generatedIdentityConfigurationLayer = provisioningLayer(
+  "identity",
   "components/shared/identity-configuration.ts",
 );` : ""}
+
+function provisioningLayer(
+  name: string,
+  entrypoint = \`components/\${name}/provisioning.ts\`,
+): ProvisioningLayer {
+  return {
+    entrypoint: resolve(deploymentRoot, entrypoint),
+    outputDirectory: resolve(generatedRoot, name),
+  };
+}
 `;
 }
 
@@ -199,8 +198,7 @@ export function renderSharedComponentSource(
 } from "imperative-deploy";
 import { persistEnvironment, requiredEnv } from "../../runtime/environment.js";
 import {
-  generatedSharedProject,
-  sharedProvisioningEntrypoint,
+  generatedSharedLayer,
 } from "../../runtime/paths.js";
 import { solutionName } from "./provisioning.js";
 ${hasEntra ? 'import { ensureEntraApplications } from "./identity.js";' : ""}
@@ -219,8 +217,7 @@ export async function shared(deployment: Deployment): Promise<void> {
     });
   });
 ${grantStep}  const outputs = await deployment.provision("solution infrastructure", {
-    entrypoint: sharedProvisioningEntrypoint,
-    outputDirectory: generatedSharedProject,
+    layer: generatedSharedLayer,
     deploymentName: \`\${environment}-\${solutionName}\`,
     scope: "resourceGroup",
     resourceGroup,

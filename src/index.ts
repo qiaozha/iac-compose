@@ -118,7 +118,13 @@ export interface Command {
   env?: NodeJS.ProcessEnv;
 }
 
+export interface ProvisioningLayer {
+  readonly entrypoint: string;
+  readonly outputDirectory: string;
+}
+
 export interface ProvisionOptions {
+  layer?: ProvisioningLayer;
   entrypoint?: string;
   compiler?: Command;
   artifactsDirectory?: string;
@@ -195,19 +201,33 @@ export class Deployment {
   async provision(name: string, options: ProvisionOptions): Promise<ProvisionOutputs> {
     let outputs: ProvisionOutputs = {};
     await this.#step("provision", name, async () => {
+      if (
+        options.layer &&
+        (options.entrypoint ||
+          options.outputDirectory ||
+          options.compiler ||
+          options.artifactsDirectory)
+      ) {
+        throw new Error(
+          "Provisioning with a layer cannot also specify source or output options.",
+        );
+      }
       const outputDirectory = resolve(
         this.projectDirectory,
-        options.outputDirectory ?? ".deploy-js/infra",
+        options.layer?.outputDirectory ??
+          options.outputDirectory ??
+          ".deploy-js/infra",
       );
+      const entrypoint = options.layer?.entrypoint ?? options.entrypoint;
       if (options.compiler && options.artifactsDirectory) {
         await this.#execute(options.compiler);
         await copyProvisioningArtifacts(
           resolve(this.projectDirectory, options.artifactsDirectory),
           outputDirectory,
         );
-      } else if (options.entrypoint) {
+      } else if (entrypoint) {
         await compileProvisioning(
-          resolve(this.projectDirectory, options.entrypoint),
+          resolve(this.projectDirectory, entrypoint),
           outputDirectory,
         );
       } else {

@@ -191,7 +191,7 @@ export async function generateDeploymentCode(
   );
   files.set(
     "runtime/paths.ts",
-    renderRuntimePathsSource(packagePath, ["shared", ...orderedComponents], [
+    renderRuntimePathsSource(packagePath, [
       ...provisioningSources.keys(),
     ], hasEntra),
   );

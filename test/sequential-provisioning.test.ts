@@ -24,10 +24,12 @@ test("dry run generates layered Bicep in one azd project", async () => {
     await mkdir(resolve(outputDirectory, ".azure/dev"), { recursive: true });
     await writeFile(resolve(outputDirectory, ".azure/dev/config.json"), "{}\n");
     await deployment.provision(`${component} infrastructure`, {
-      entrypoint: resolve(
-        `examples/chatbot/src/components/${component}/provisioning.ts`,
-      ),
-      outputDirectory,
+      layer: {
+        entrypoint: resolve(
+          `examples/chatbot/src/components/${component}/provisioning.ts`,
+        ),
+        outputDirectory,
+      },
       deploymentName: "dev-chatbot",
       scope: "resourceGroup",
       resourceGroup: "rg-test",
@@ -89,10 +91,12 @@ test("dry run generates layered Bicep in one azd project", async () => {
     log: () => {},
   });
   await componentDeployment.provision("frontend infrastructure", {
-    entrypoint: resolve(
-      "examples/chatbot/src/components/frontend/provisioning.ts",
-    ),
-    outputDirectory: resolve(outputRoot, "frontend"),
+    layer: {
+      entrypoint: resolve(
+        "examples/chatbot/src/components/frontend/provisioning.ts",
+      ),
+      outputDirectory: resolve(outputRoot, "frontend"),
+    },
     deploymentName: "dev-chatbot",
     scope: "resourceGroup",
     resourceGroup: "rg-test",
