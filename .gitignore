@@ -2,6 +2,4 @@ dist/
 node_modules/
 .deploy-js-generated.json
 examples/chatbot/.generated/
-examples/chatbot/.state/
 examples/contoso/.generated/
-examples/contoso/.state/
