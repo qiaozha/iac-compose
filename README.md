@@ -263,8 +263,11 @@ await deployment.provision("resources", {
 });
 ```
 
-The runtime records generated paths in `.deploy-js-generated.json` and only
-replaces those files. Layered provisioning merges a JSON-compatible
+The runtime records all layered artifact paths in the single
+`.generated/.deploy-js-generated.json` manifest and only replaces files under
+the layer being regenerated. Existing per-layer manifests are migrated into
+that root manifest. Standalone provisioning keeps its manifest in its output
+directory. Layered provisioning merges a JSON-compatible
 `.generated/azure.yaml`, synchronizes its shared azd environment, runs
 `azd provision <layer>`, and returns azd environment outputs as strings. For an
 `outputDirectory` directly under `.generated`, the runtime infers the layer name

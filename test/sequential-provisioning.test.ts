@@ -21,6 +21,11 @@ test("dry run generates layered Bicep in one azd project", async () => {
     const outputDirectory = resolve(outputRoot, component);
     await mkdir(outputDirectory, { recursive: true });
     await writeFile(resolve(outputDirectory, "azure.yaml"), "{}\n");
+    await writeFile(resolve(outputDirectory, "stale.bicep"), "stale\n");
+    await writeFile(
+      resolve(outputDirectory, ".deploy-js-generated.json"),
+      `${JSON.stringify(["stale.bicep"], null, 2)}\n`,
+    );
     await mkdir(resolve(outputDirectory, ".azure/dev"), { recursive: true });
     await writeFile(resolve(outputDirectory, ".azure/dev/config.json"), "{}\n");
     await deployment.provision(`${component} infrastructure`, {
@@ -42,8 +47,26 @@ test("dry run generates layered Bicep in one azd project", async () => {
     );
     await assert.rejects(access(resolve(outputDirectory, "azure.yaml")));
     await assert.rejects(access(resolve(outputDirectory, ".azure")));
+    await assert.rejects(access(resolve(outputDirectory, "stale.bicep")));
+    await assert.rejects(
+      access(resolve(outputDirectory, ".deploy-js-generated.json")),
+    );
   }
   await access(resolve(outputRoot, ".azure/dev/config.json"));
+  const generatedFiles = [
+    "agent/main.bicep",
+    "agent/main.bicepparam",
+    "frontend/main.bicep",
+    "frontend/main.bicepparam",
+    "shared/main.bicep",
+    "shared/main.bicepparam",
+  ];
+  assert.deepEqual(
+    JSON.parse(
+      await readFile(resolve(outputRoot, ".deploy-js-generated.json"), "utf8"),
+    ),
+    generatedFiles,
+  );
   assert.deepEqual(
     JSON.parse(await readFile(resolve(outputRoot, "azure.yaml"), "utf8")),
     {
@@ -109,5 +132,11 @@ test("dry run generates layered Bicep in one azd project", async () => {
   assert.deepEqual(
     rerunManifest.infra.layers.find(({ name }) => name === "frontend")?.dependsOn,
     ["agent"],
+  );
+  assert.deepEqual(
+    JSON.parse(
+      await readFile(resolve(outputRoot, ".deploy-js-generated.json"), "utf8"),
+    ),
+    generatedFiles,
   );
 });

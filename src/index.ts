@@ -219,17 +219,21 @@ export class Deployment {
           options.outputDirectory ??
           ".deploy-js/infra",
       );
+      const layer = inferLayerName(outputDirectory);
+      const azdProjectDirectory = layer ? dirname(outputDirectory) : outputDirectory;
       const entrypoint = options.layer?.entrypoint ?? options.entrypoint;
       if (options.compiler && options.artifactsDirectory) {
         await this.#execute(options.compiler);
         await copyProvisioningArtifacts(
           resolve(this.projectDirectory, options.artifactsDirectory),
           outputDirectory,
+          azdProjectDirectory,
         );
       } else if (entrypoint) {
         await compileProvisioning(
           resolve(this.projectDirectory, entrypoint),
           outputDirectory,
+          azdProjectDirectory,
         );
       } else {
         throw new Error(
@@ -256,8 +260,6 @@ export class Deployment {
         ...options.environmentValues,
       };
       const module = basename(templateFile, extname(templateFile));
-      const layer = inferLayerName(outputDirectory);
-      const azdProjectDirectory = layer ? dirname(outputDirectory) : outputDirectory;
       const dependsOn = layer
         ? this.#inferLayerDependencies(azdProjectDirectory, layer)
         : [];
@@ -419,6 +421,7 @@ function relativeAzdPath(projectDirectory: string, outputDirectory: string): str
 export async function compileProvisioning(
   entrypoint: string,
   outputDirectory: string,
+  generatedFilesRoot = outputDirectory,
 ): Promise<void> {
   const resolvedEntrypoint = resolve(entrypoint);
   const module = (await importTypeScript(
@@ -426,29 +429,42 @@ export async function compileProvisioning(
   )) as Record<string, unknown>;
   const files = resolveRenderedFiles(module, resolvedEntrypoint);
 
-  await installRenderedFiles(outputDirectory, files);
+  await installRenderedFiles(outputDirectory, files, generatedFilesRoot);
 }
 
 export async function copyProvisioningArtifacts(
   artifactsDirectory: string,
   outputDirectory: string,
+  generatedFilesRoot = outputDirectory,
 ): Promise<void> {
   const files = await readRenderedDirectory(artifactsDirectory);
   if (files.length === 0) {
     throw new Error(`Provisioning compiler produced no files in '${artifactsDirectory}'.`);
   }
-  await installRenderedFiles(outputDirectory, files);
+  await installRenderedFiles(outputDirectory, files, generatedFilesRoot);
 }
 
 async function installRenderedFiles(
   outputDirectory: string,
   files: readonly RenderedFile[],
+  generatedFilesRoot: string,
 ): Promise<void> {
-
+  outputDirectory = resolve(outputDirectory);
+  generatedFilesRoot = resolve(generatedFilesRoot);
   await mkdir(outputDirectory, { recursive: true });
-  const manifestPath = resolve(outputDirectory, ".deploy-js-generated.json");
-  for (const generatedPath of await readGeneratedManifest(manifestPath)) {
-    await rm(resolveOutputPath(outputDirectory, generatedPath), { force: true });
+  await mkdir(generatedFilesRoot, { recursive: true });
+  const manifestPath = resolve(generatedFilesRoot, ".deploy-js-generated.json");
+  const generatedPaths = new Set(await readGeneratedManifest(manifestPath));
+  if (generatedFilesRoot !== outputDirectory) {
+    await migrateLayerGeneratedManifests(generatedFilesRoot, generatedPaths);
+  }
+
+  const outputPrefix = relativeGeneratedPath(generatedFilesRoot, outputDirectory);
+  const scopedPrefix = outputPrefix ? `${outputPrefix}/` : "";
+  for (const generatedPath of [...generatedPaths]) {
+    if (scopedPrefix && !generatedPath.startsWith(scopedPrefix)) continue;
+    await rm(resolveOutputPath(generatedFilesRoot, generatedPath), { force: true });
+    generatedPaths.delete(generatedPath);
   }
   await Promise.all(
     files.map(async (file) => {
@@ -457,10 +473,50 @@ async function installRenderedFiles(
       await writeFile(outputPath, file.contents);
     }),
   );
+  for (const file of files) {
+    generatedPaths.add(
+      relativeGeneratedPath(
+        generatedFilesRoot,
+        resolveOutputPath(outputDirectory, file.path),
+      ),
+    );
+  }
   await writeFile(
     manifestPath,
-    `${JSON.stringify(files.map((file) => file.path).sort(), null, 2)}\n`,
+    `${JSON.stringify([...generatedPaths].sort(), null, 2)}\n`,
   );
+}
+
+async function migrateLayerGeneratedManifests(
+  generatedFilesRoot: string,
+  generatedPaths: Set<string>,
+): Promise<void> {
+  for (const entry of await readdir(generatedFilesRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const layerDirectory = resolve(generatedFilesRoot, entry.name);
+    const manifestPath = resolve(layerDirectory, ".deploy-js-generated.json");
+    for (const generatedPath of await readGeneratedManifest(manifestPath)) {
+      generatedPaths.add(
+        relativeGeneratedPath(
+          generatedFilesRoot,
+          resolveOutputPath(layerDirectory, generatedPath),
+        ),
+      );
+    }
+    await rm(manifestPath, { force: true });
+  }
+}
+
+function relativeGeneratedPath(root: string, path: string): string {
+  const generatedPath = relative(root, path);
+  if (
+    isAbsolute(generatedPath) ||
+    generatedPath === ".." ||
+    generatedPath.startsWith(`..${sep}`)
+  ) {
+    throw new Error(`Generated provisioning output '${path}' must be inside '${root}'.`);
+  }
+  return generatedPath.split(sep).join("/");
 }
 
 async function readRenderedDirectory(
