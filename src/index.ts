@@ -10,12 +10,13 @@ import {
 } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
-import { createAzdProject } from "./azd.js";
+import { getAzdProject } from "./azd.js";
 import { importTypeScript } from "./typescript-loader.js";
 
 export {
   AzdProject,
   createAzdProject,
+  getAzdProject,
   parseAzdEnvironment,
   type AzdDeployOptions,
   type AzdEnvironmentValues,
@@ -289,7 +290,7 @@ export class Deployment {
           { mode: 0o600 },
         );
       }
-      const project = createAzdProject(this, {
+      const project = getAzdProject(this, {
         directory: azdProjectDirectory,
         mergeManifest: layer !== undefined,
         manifest: {

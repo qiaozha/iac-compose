@@ -27,8 +27,9 @@ export class AzdProject {
   readonly environment: string;
 
   readonly #deployment: Deployment;
-  readonly #options: AzdProjectOptions;
+  #options: AzdProjectOptions;
   #initialized = false;
+  #environmentInitialized = false;
 
   constructor(deployment: Deployment, options: AzdProjectOptions) {
     this.#deployment = deployment;
@@ -41,10 +42,21 @@ export class AzdProject {
       "dev";
   }
 
+  configure(options: AzdProjectOptions): this {
+    const directory = resolve(this.#deployment.projectDirectory, options.directory);
+    const environment = resolveAzdEnvironment(this.#deployment, options);
+    if (directory !== this.directory || environment !== this.environment) {
+      throw new Error("Cannot reconfigure an azd project with a different root or environment.");
+    }
+    this.#options = options;
+    this.#initialized = false;
+    return this;
+  }
+
   async provision(): Promise<Record<string, string>> {
-    await this.initialize();
     const layers = asLayers(asRecord(this.#options.manifest.infra)?.layers);
     const layer = layers?.length === 1 ? layers[0]!.name : undefined;
+    await this.initialize();
     const args = ["provision"];
     if (layer) args.push(layer);
     args.push("--environment", this.environment, "--no-prompt");
@@ -133,7 +145,7 @@ export class AzdProject {
       return;
     }
 
-    if (!(await this.#environmentExists())) {
+    if (!this.#environmentInitialized && !(await this.#environmentExists())) {
       const args = ["env", "new", this.environment, "--no-prompt"];
       const subscription =
         this.#options.subscription ?? process.env.AZURE_SUBSCRIPTION_ID;
@@ -146,6 +158,7 @@ export class AzdProject {
         cwd: this.directory,
       });
     }
+    this.#environmentInitialized = true;
 
     const values = compactValues({
       AZURE_ENV_NAME: this.environment,
@@ -206,11 +219,36 @@ export class AzdProject {
   }
 }
 
-export function createAzdProject(
+export function getAzdProject(
   deployment: Deployment,
   options: AzdProjectOptions,
 ): AzdProject {
-  return new AzdProject(deployment, options);
+  const projects = azdProjects.get(deployment) ?? new Map<string, AzdProject>();
+  if (!azdProjects.has(deployment)) azdProjects.set(deployment, projects);
+  const directory = resolve(deployment.projectDirectory, options.directory);
+  const environment = resolveAzdEnvironment(deployment, options);
+  const key = `${directory}\0${environment}`;
+  const existing = projects.get(key);
+  if (existing) return existing.configure(options);
+  const project = new AzdProject(deployment, options);
+  projects.set(key, project);
+  return project;
+}
+
+export const createAzdProject = getAzdProject;
+
+const azdProjects = new WeakMap<Deployment, Map<string, AzdProject>>();
+
+function resolveAzdEnvironment(
+  deployment: Deployment,
+  options: AzdProjectOptions,
+): string {
+  return (
+    options.environment ??
+    deployment.environment ??
+    process.env.AZURE_ENV_NAME ??
+    "dev"
+  );
 }
 
 export function parseAzdEnvironment(output: string): Record<string, string> {

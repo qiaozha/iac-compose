@@ -28,7 +28,7 @@ test("chatbot owns deployment order and generates one hook-free azd project", as
     runtimeSource,
     /getAccessToken|["']rest["']|graph\.microsoft\.com/,
   );
-  assert.match(source, /createAzdProject/);
+  assert.match(source, /getAzdProject/);
   assert.match(source, /deployAppServiceContainer/);
 });
 

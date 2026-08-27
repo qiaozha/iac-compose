@@ -95,7 +95,7 @@ export function renderRuntimeEnvironmentSource(solutionName: string): string {
   return `import { resolve } from "node:path";
 
 import {
-  createAzdProject,
+  getAzdProject,
   readEnvironmentFile,
   requiredEnv,
   resolveAzureSubscriptionContext,
@@ -151,7 +151,7 @@ export async function persistEnvironment(
 }
 
 function environmentProject(deployment: Deployment, environment?: string) {
-  return createAzdProject(deployment, {
+  return getAzdProject(deployment, {
     directory: generatedRoot,
     environment,
     mergeManifest: true,

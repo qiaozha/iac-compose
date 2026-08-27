@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 
 import { ensureRoleAssignment } from "../../azure.js";
-import { createAzdProject } from "../../azd.js";
+import { getAzdProject } from "../../azd.js";
 import type { Deployment } from "../../index.js";
 import type { ResourceContractRequirement } from "../../shared/contracts/resources/types.js";
 import type { DeployResourceComponentOptions } from "./types.js";
@@ -40,7 +40,7 @@ export async function deployHostedAgentService(
   deployment: Deployment,
   options: HostedAgentDeploymentOptions,
 ): Promise<Record<string, string>> {
-  const project = createAzdProject(deployment, {
+  const project = getAzdProject(deployment, {
     directory: options.generatedDirectory,
     mergeManifest: true,
     manifest: createHostedAgentManifest({

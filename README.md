@@ -227,6 +227,9 @@ the standard `components/<component>/provisioning.ts` entrypoint and
 `.generated/<component>` output directory from the component name. The two-phase
 Entra lifecycle uses bootstrap and configuration descriptors that share the same
 `identity` output layer but override the source entrypoint.
+`getAzdProject` memoizes one `AzdProject` per deployment, generated root, and
+environment. Environment state, infrastructure layers, and service manifests
+configure that shared instance instead of constructing a project per component.
 
 Delete all resources tracked by that generated project with:
 

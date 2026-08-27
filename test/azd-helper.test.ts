@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { createAzdProject, createDeployment } from "../src/index.js";
+import { createDeployment, getAzdProject } from "../src/index.js";
 
 test("dry-run azd preparation writes a manifest without environment state", async () => {
   const root = await mkdtemp(join(tmpdir(), "deploy-js-azd-dry-"));
@@ -15,7 +15,7 @@ test("dry-run azd preparation writes a manifest without environment state", asyn
     projectDirectory: root,
     log: () => {},
   });
-  const project = createAzdProject(deployment, {
+  const project = getAzdProject(deployment, {
     directory: projectDirectory,
     manifest: { name: "dry-project", services: {} },
   });
@@ -38,14 +38,15 @@ test("azd service preparation merges with component infrastructure", async () =>
     projectDirectory: root,
     log: () => {},
   });
-  await createAzdProject(deployment, {
+  const infrastructureProject = getAzdProject(deployment, {
     directory: projectDirectory,
     manifest: {
       name: "dev-component",
       infra: { provider: "bicep", path: ".", module: "main" },
     },
-  }).initialize();
-  await createAzdProject(deployment, {
+  });
+  await infrastructureProject.initialize();
+  const serviceProject = getAzdProject(deployment, {
     directory: projectDirectory,
     mergeManifest: true,
     manifest: {
@@ -54,7 +55,9 @@ test("azd service preparation merges with component infrastructure", async () =>
         api: { host: "appservice", language: "docker" },
       },
     },
-  }).initialize();
+  });
+  assert.equal(serviceProject, infrastructureProject);
+  await serviceProject.initialize();
 
   assert.deepEqual(
     JSON.parse(await readFile(join(projectDirectory, "azure.yaml"), "utf8")),
@@ -103,13 +106,11 @@ fi
       projectDirectory: root,
       log: () => {},
     });
-    const project = createAzdProject(deployment, {
+    const project = getAzdProject(deployment, {
       directory: projectDirectory,
       manifest: {
         name: "helper-test",
-        services: {
-          api: { host: "appservice", language: "docker" },
-        },
+        infra: { provider: "bicep", path: ".", module: "main" },
       },
       subscription: "00000000-0000-0000-0000-000000000000",
       location: "westus2",
@@ -117,10 +118,21 @@ fi
     });
 
     const provisioned = await project.provision();
-    const deployed = await project.deploy("api", {
+    const serviceProject = getAzdProject(deployment, {
+      directory: projectDirectory,
+      mergeManifest: true,
+      manifest: {
+        name: "deploy-api",
+        services: {
+          api: { host: "appservice", language: "docker" },
+        },
+      },
+    });
+    assert.equal(serviceProject, project);
+    const deployed = await serviceProject.deploy("api", {
       fromPackage: "registry.example/api:dev",
     });
-    await project.setValues({ LIFECYCLE_OUTPUT: "persisted" });
+    await serviceProject.setValues({ LIFECYCLE_OUTPUT: "persisted" });
 
     assert.equal(provisioned.SERVICE_NAME, "deployed-service");
     assert.equal(deployed.SERVICE_URI, "https://example.test");
@@ -130,6 +142,7 @@ fi
       JSON.parse(await readFile(join(projectDirectory, "azure.yaml"), "utf8")),
       {
         name: "helper-test",
+        infra: { provider: "bicep", path: ".", module: "main" },
         services: {
           api: { host: "appservice", language: "docker" },
         },

@@ -1,5 +1,5 @@
 import type { Deployment } from "./index.js";
-import { createAzdProject } from "./azd.js";
+import { getAzdProject } from "./azd.js";
 
 const builtInRoleDefinitionIds: Readonly<Record<string, string>> = {
   AcrPull: "7f951dda-4ed3-4680-a7ca-43fe172d538d",
@@ -1123,7 +1123,7 @@ export async function prepareAppServiceContainer(
   deployment: Deployment,
   options: AppServiceContainerOptions,
 ) {
-  const project = createAzdProject(deployment, {
+  const project = getAzdProject(deployment, {
     directory: options.directory,
     mergeManifest: true,
     manifest: createAppServiceContainerManifest(options),

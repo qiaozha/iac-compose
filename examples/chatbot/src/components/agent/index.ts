@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 
 import {
-  createAzdProject,
+  getAzdProject,
   ensureRoleAssignment,
   type Deployment,
 } from "imperative-deploy";
@@ -53,7 +53,7 @@ export async function agent(deployment: Deployment): Promise<void> {
   );
 
   if (deployment.dryRun) {
-    const project = createAzdProject(deployment, {
+    const project = getAzdProject(deployment, {
       directory: generatedRoot,
       mergeManifest: true,
       manifest: createAgentAzdManifest({
@@ -65,7 +65,7 @@ export async function agent(deployment: Deployment): Promise<void> {
   }
 
   await deployment.deploy("hosted Foundry agent", async () => {
-    const project = createAzdProject(deployment, {
+    const project = getAzdProject(deployment, {
       directory: generatedRoot,
       mergeManifest: true,
       manifest: createAgentAzdManifest({
