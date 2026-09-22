@@ -1,0 +1,8 @@
+{
+  "name": "messaging-deployment-fixture",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "iac-compose": "workspace:*"
+  }
+}

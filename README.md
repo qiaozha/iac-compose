@@ -27,6 +27,68 @@ export default defineDeployment(async (deployment) => {
 });
 ```
 
+## Agent skills
+
+This repository includes two complementary Agent Skills:
+
+- [azure-infrastructure-intent](.github/skills/azure-infrastructure-intent/SKILL.md)
+  infers resource requirements from a sparse workload request or application
+  repository, applies Azure Well-Architected guidance, and selects a
+  cost-conscious architecture.
+- [iac-compose](.github/skills/iac-compose/SKILL.md) turns the selected
+  architecture into contract-generated or directly authored TypeScript
+  infrastructure with ordered lifecycle, validation, and deployment safety.
+
+Install both for the intent-to-infrastructure workflow. Preview and install
+them from this repository with GitHub CLI 2.90.0 or newer:
+
+```bash
+gh skill preview qiaozha/iac-compose azure-infrastructure-intent --allow-hidden-dirs
+gh skill preview qiaozha/iac-compose iac-compose --allow-hidden-dirs
+gh skill install qiaozha/iac-compose azure-infrastructure-intent --allow-hidden-dirs
+gh skill install qiaozha/iac-compose iac-compose --allow-hidden-dirs
+```
+
+By default, GitHub CLI installs the skill for Copilot at project scope.
+
+### Evaluate the skills with Vally
+
+The behavioral suites under [evals/](evals/) use
+[Vally](https://aka.ms/vally) to measure skill routing, sparse Azure intent
+recognition, Well-Architected service selection, contract generation, direct
+TypeScript authoring, lifecycle ordering, cloud-operation safety, and the
+end-to-end handoff from inferred intent to final `iac-compose` infrastructure.
+
+Vally requires Node.js 22.12 or newer and a GitHub account with an active
+Copilot subscription. Validate the skill definitions and eval specifications
+without invoking an agent:
+
+```bash
+npm run eval:lint
+```
+
+For reproducible behavioral evaluations, provide a fine-grained GitHub token
+with **Copilot Requests** account permission. Vally then uses an isolated
+Copilot configuration home containing only the skills declared by each eval:
+
+```bash
+export COPILOT_GITHUB_TOKEN="<token>"
+npm run eval:routing
+```
+
+The routing suite is the smaller critical gate. Run every scenario with
+`npm run eval:skills`, or run one skill suite with `npm run eval:intent` or
+`npm run eval:iac-compose`. Run only the cross-skill final-outcome scenario with
+`npm run eval:end-to-end`. Vally writes trajectories and reports under
+`vally-results/`, which is excluded from version control. The fixtures contain
+no Azure credentials, and the scenarios explicitly prohibit deployments, role
+grants, and other cloud side effects.
+
+For a quick local fallback, an existing Copilot CLI login can be reused with
+`EVALUATE_USE_HOST_COPILOT_HOME=1`. Host-home mode also loads personal Copilot
+settings and skills, so its routing results are not hermetic and should not be
+used as the release gate.
+
 ## Commands
 
 ```bash

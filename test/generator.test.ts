@@ -662,6 +662,19 @@ test("runs generated code outside the package dependency tree", async () => {
   ]);
 
   assert.match(stdout, /DRY provision: solution infrastructure/);
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      cli,
+      "run",
+      join(outputDirectory, "deploy.ts"),
+      "--environment",
+      "dev",
+      "--component",
+      "toString",
+      "--dry-run",
+    ]),
+    /Unknown empty component 'toString'/,
+  );
 
   const tsx = resolve("node_modules/.bin/tsx");
   const sourceRun = await execFileAsync(tsx, [

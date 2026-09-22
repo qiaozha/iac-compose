@@ -1,0 +1,259 @@
+name: iac-compose
+description: Evaluates routing, contract generation, direct authoring, lifecycle order, and deployment safety.
+version: "1.0"
+type: capability
+
+agent_environment:
+  skills:
+    - ../../.github/skills/azure-infrastructure-intent
+    - ../../.github/skills/iac-compose
+
+defaults:
+  runs: 1
+  timeout: 5m
+  model: gpt-5.6-sol
+  reasoning_effort: high
+  judge_model: gpt-5.6-sol
+  judge_reasoning_effort: medium
+
+tags:
+  area: iac-compose
+  cost: high
+
+stimuli:
+  - name: generate-known-resource-contracts
+    tags:
+      priority: p0
+      behavior: routing
+    agent_environment:
+      files:
+        - src: fixtures/contract-api
+          dest: .
+    prompt: |
+      The Azure resource plan is final; do not perform architecture intent
+      recognition or reconsider the selected services. Create only
+      config/resource-requirements.json and solution.json for schema version
+      1.0. Do not generate deployment source, install packages, run Azure
+      commands, grant roles, or deploy.
+
+      The solution has one component named api, kind http-api, source
+      components/api. It requires:
+      - application-monitoring named monitoring, producing
+        applicationInsightsConnectionString;
+      - object-storage named uploads with a container named uploads, producing
+        storageBlobEndpoint and storageAccountResourceId, and granting the
+        apiCompute principal Storage Blob Data Contributor;
+      - container-host named apiCompute, source components/api, port 8080,
+        health path /health, producing backendBaseUrl and
+        backendIdentityPrincipalId.
+
+      Bind AZURE_STORAGE_BLOB_ENDPOINT and
+      APPLICATIONINSIGHTS_CONNECTION_STRING into the container runtime settings.
+      Include all three resources in solution.resources.planned.
+    rubric:
+      - The exact known resource plan is represented with only supported iac-compose kinds and schema version 1.0.
+      - Component IDs, enabled components, requiredBy values, planned resources, source paths, and kinds agree across both contracts.
+      - Every output binding has one producer, the storage role targets backendIdentityPrincipalId, and no unsupported output name is invented.
+      - The agent routes directly to iac-compose without invoking sparse-intent architecture planning.
+      - The agent creates only the two requested authored contracts and performs no cloud or package side effect.
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          required:
+            - iac-compose
+          disallowed:
+            - azure-infrastructure-intent
+      - type: file-exists
+        config:
+          path: config/resource-requirements.json
+      - type: file-exists
+        config:
+          path: solution.json
+      - type: run-command
+        config:
+          command: node
+          args:
+            - --input-type=module
+            - -e
+            - |
+              import { readFileSync } from "node:fs";
+              const requirements = JSON.parse(readFileSync("config/resource-requirements.json", "utf8"));
+              const solution = JSON.parse(readFileSync("solution.json", "utf8"));
+              if (requirements.schemaVersion !== "1.0" || solution.schemaVersion !== "1.0") process.exit(1);
+              if (requirements.solution.enabledComponents.join(",") !== "api") process.exit(1);
+              const expected = new Map([["monitoring", "application-monitoring"], ["uploads", "object-storage"], ["apiCompute", "container-host"]]);
+              if (requirements.resources.length !== expected.size) process.exit(1);
+              for (const resource of requirements.resources) {
+                if (expected.get(resource.id) !== resource.kind || resource.requiredBy.join(",") !== "api") process.exit(1);
+              }
+              const planned = solution.resources?.planned ?? [];
+              if (planned.length !== expected.size || planned.some((resource) => expected.get(resource.id) !== resource.kind)) process.exit(1);
+      - type: file-matches
+        config:
+          path: config/resource-requirements.json
+          pattern: '\$\{output\.storageBlobEndpoint\}'
+      - type: file-matches
+        config:
+          path: config/resource-requirements.json
+          pattern: '\$\{output\.applicationInsightsConnectionString\}'
+      - type: tool-calls
+        config:
+          disallowed:
+            - name: '^(bash|shell|run_command|runInTerminal)$'
+              command: '(?:^|[;&|]\s*|\n\s*)(?:az|azd)(?:\s|$)'
+      - type: prompt
+        config:
+          scoring: binary
+          evidence:
+            - trajectory
+            - repo
+
+  - name: author-unsupported-service-directly
+    tags:
+      priority: p1
+      behavior: direct-authoring
+    agent_environment:
+      files:
+        - src: fixtures/direct-service-bus
+          dest: .
+    prompt: |
+      The architecture is already approved; do not perform architecture intent
+      recognition. Add a resource-group-scoped Azure
+      Service Bus Standard namespace, an orders queue, a user-assigned managed
+      identity for a worker, and the least-privilege data-plane role that lets
+      that identity receive messages. This resource is not supported by the
+      iac-compose contract vocabulary, so implement it through direct TypeScript
+      authoring.
+
+      Create deployment/deploy.ts and deployment/infra.ts. The deployment
+      program must ensure the configured resource group, provision infra.ts as
+      a layer under deployment/.generated/messaging, and publish returned
+      outputs for later steps. infra.ts must export a non-empty outputBicep
+      array containing main.bicep and main.bicepparam and output the namespace,
+      queue, and worker identity client ID. Parameterize subscription, resource
+      group, and location through the established iac-compose environment
+      conventions. Disable Service Bus local authentication and require TLS 1.2
+      or newer.
+
+      Do not install dependencies, run cloud commands, grant roles outside the
+      authored IaC, or deploy.
+    rubric:
+      - Direct TypeScript authoring is used instead of inventing a Service Bus contract kind.
+      - deploy.ts uses defineDeployment, ensures the resource group before provisioning, uses a messaging layer, and consumes returned outputs rather than reconstructing resource names.
+      - infra.ts emits valid-looking resource-group-scoped Bicep and a parameter file for a Standard Service Bus namespace, orders queue, user-assigned identity, and scoped Azure Service Bus Data Receiver role assignment.
+      - Local authentication is disabled, minimum TLS is at least 1.2, names and location are parameterized or deterministically derived, and no secret is emitted.
+      - No Azure or package side effect is performed.
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          required:
+            - iac-compose
+          disallowed:
+            - azure-infrastructure-intent
+      - type: file-exists
+        config:
+          path: deployment/deploy.ts
+      - type: file-exists
+        config:
+          path: deployment/infra.ts
+      - type: file-matches
+        config:
+          path: deployment/deploy.ts
+          pattern: 'defineDeployment'
+      - type: file-matches
+        config:
+          path: deployment/deploy.ts
+          pattern: 'ensureResourceGroup'
+      - type: file-matches
+        config:
+          path: deployment/deploy.ts
+          pattern: 'deployment\.provision'
+      - type: file-matches
+        config:
+          path: deployment/infra.ts
+          pattern: 'outputBicep'
+      - type: file-matches
+        config:
+          path: deployment/infra.ts
+          pattern: 'Microsoft\.ServiceBus/namespaces'
+      - type: file-matches
+        config:
+          path: deployment/infra.ts
+          pattern: '(?i)disableLocalAuth'
+      - type: file-matches
+        config:
+          path: deployment/infra.ts
+          pattern: '(?i)minimumTlsVersion'
+      - type: tool-calls
+        config:
+          disallowed:
+            - name: '^(bash|shell|run_command|runInTerminal)$'
+              command: '(?:^|[;&|]\s*|\n\s*)(?:az|azd)(?:\s|$)'
+      - type: prompt
+        config:
+          scoring: binary
+          evidence:
+            - trajectory
+            - repo
+
+  - name: preserve-component-lifecycle-order
+    tags:
+      priority: p0
+      behavior: ordering
+    agent_environment:
+      files:
+        - src: fixtures/component-order
+          dest: .
+    prompt: |
+      The component plan is already known; do not perform architecture intent
+      recognition. Create deployment/deploy.ts only.
+      It must prepare the environment first, support --component selection for
+      shared and api, reject unknown component names with the valid names, and
+      run shared before api during a full deployment. Do not change the existing
+      component files, infer new Azure resources, install anything, or execute
+      commands.
+    rubric:
+      - The known plan routes to iac-compose without invoking infrastructure intent recognition.
+      - The program default-exports defineDeployment, prepares the environment first, and implements exact shared/api component selection with a useful unknown-component error.
+      - Full deployment order is shared then api and no parallelization or hidden lifecycle is introduced.
+      - Only deployment/deploy.ts is created and the existing fixture files remain unchanged.
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          required:
+            - iac-compose
+          disallowed:
+            - azure-infrastructure-intent
+      - type: file-exists
+        config:
+          path: deployment/deploy.ts
+      - type: run-command
+        config:
+          command: node
+          args:
+            - --input-type=module
+            - -e
+            - |
+              import { readFileSync } from "node:fs";
+              const source = readFileSync("deployment/deploy.ts", "utf8");
+              const prepare = source.indexOf("await prepareEnvironment(deployment)");
+              const shared = source.lastIndexOf("await shared(deployment)");
+              const api = source.lastIndexOf("await api(deployment)");
+              if (prepare < 0 || shared <= prepare || api <= shared) process.exit(1);
+              if (!source.includes("deployment.component") || !source.includes("Unknown")) process.exit(1);
+              if (!source.includes("Object.hasOwn")) process.exit(1);
+      - type: diff-not-contains
+        config:
+          pattern: 'deployment/components/'
+      - type: prompt
+        config:
+          scoring: binary
+          evidence:
+            - trajectory
+            - diff
+
+scoring:
+  threshold: 1.0

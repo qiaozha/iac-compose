@@ -1,0 +1,13 @@
+{
+  "name": "document-support-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "@azure/cosmos": "^4.4.1",
+    "express": "^5.1.0",
+    "multer": "^2.0.2"
+  }
+}

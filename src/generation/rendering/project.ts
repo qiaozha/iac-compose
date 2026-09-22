@@ -35,7 +35,12 @@ ${entries}
 export default defineDeployment(async (deployment) => {
   await prepareEnvironment(deployment);
   if (deployment.component) {
-    const deployComponent = componentDeployments[deployment.component];
+    const deployComponent = Object.hasOwn(
+      componentDeployments,
+      deployment.component,
+    )
+      ? componentDeployments[deployment.component]
+      : undefined;
     if (!deployComponent) {
       throw new Error(
         \`Unknown ${escapeTemplateLiteral(solutionName)} component '\${deployment.component}'. Expected one of: \${Object.keys(componentDeployments).join(", ")}.\`,

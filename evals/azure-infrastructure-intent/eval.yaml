@@ -1,0 +1,323 @@
+name: azure-infrastructure-intent
+description: Evaluates sparse workload recognition, service selection, restraint, Well-Architected reasoning, and handoff to final iac-compose infrastructure.
+version: "1.0"
+type: capability
+
+agent_environment:
+  skills:
+    - ../../.github/skills/azure-infrastructure-intent
+    - ../../.github/skills/iac-compose
+
+defaults:
+  runs: 1
+  timeout: 5m
+  model: gpt-5.6-sol
+  reasoning_effort: high
+  judge_model: gpt-5.6-sol
+  judge_reasoning_effort: medium
+
+tags:
+  area: azure-infrastructure-intent
+  cost: high
+
+stimuli:
+  - name: infer-standard-container-api
+    tags:
+      priority: p0
+      behavior: inference
+    agent_environment:
+      files:
+        - src: fixtures/container-api
+          dest: .
+    prompt: |
+      We need this ordinary business application hosted on Azure. We
+      intentionally have not chosen any Azure resources. Inspect the repository
+      and create only architecture-plan.json; do not implement infrastructure,
+      install packages, run cloud commands, or deploy anything. Do not ask about
+      routine defaults.
+
+      The JSON must contain these top-level fields:
+      - profile: a workload profile string
+      - components: an array
+      - resources: an array whose entries include service and reason
+      - assumptions: an array whose entries include decision and confidence
+      - dependencies: an array
+      - wellArchitected: an object with reliability, security, costOptimization,
+        operationalExcellence, and performanceEfficiency arrays
+      - tradeoffs: an array
+    rubric:
+      - The plan recognizes a request-driven container API and selects Azure App Service rather than AKS.
+      - The plan identifies Blob Storage for durable uploads, preserves Cosmos DB for document data, and includes Azure Container Registry.
+      - The plan selects the standard workload profile and includes managed identity, least-privilege RBAC, Application Insights, and Log Analytics.
+      - Every resource is tied to observed application evidence or a stated profile default; it does not add APIM, Front Door, Firewall, Kubernetes, or private networking without a need.
+      - Assumptions use explicit, evidenced, defaulted, or unresolved confidence and the Well-Architected review covers all five pillars with meaningful content.
+      - The agent follows the plan-only and no-cloud-side-effects constraints without asking routine Azure product questions.
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          required:
+            - azure-infrastructure-intent
+          disallowed:
+            - iac-compose
+      - type: file-exists
+        config:
+          path: architecture-plan.json
+      - type: run-command
+        config:
+          command: node
+          args:
+            - --input-type=module
+            - -e
+            - |
+              import { readFileSync } from "node:fs";
+              const plan = JSON.parse(readFileSync("architecture-plan.json", "utf8"));
+              const arrays = ["components", "resources", "assumptions", "dependencies", "tradeoffs"];
+              if (typeof plan.profile !== "string" || !plan.profile) process.exit(1);
+              if (arrays.some((key) => !Array.isArray(plan[key]))) process.exit(1);
+              const pillars = ["reliability", "security", "costOptimization", "operationalExcellence", "performanceEfficiency"];
+              if (!plan.wellArchitected || pillars.some((key) => !Array.isArray(plan.wellArchitected[key]))) process.exit(1);
+      - type: file-matches
+        config:
+          path: architecture-plan.json
+          pattern: '(?i)"profile"\s*:\s*"standard"'
+      - type: file-matches
+        config:
+          path: architecture-plan.json
+          pattern: '(?i)App Service'
+      - type: file-matches
+        config:
+          path: architecture-plan.json
+          pattern: '(?i)(Blob Storage|Storage Account)'
+      - type: file-matches
+        config:
+          path: architecture-plan.json
+          pattern: '(?i)Cosmos DB'
+      - type: tool-calls
+        config:
+          disallowed:
+            - name: '^(bash|shell|run_command|runInTerminal)$'
+              command: '(?:^|[;&|]\s*|\n\s*)(?:az|azd)(?:\s|$)'
+      - type: prompt
+        config:
+          scoring: binary
+          evidence:
+            - trajectory
+            - repo
+
+  - name: preserve-postgresql-engine
+    tags:
+      priority: p1
+      behavior: inference
+    agent_environment:
+      files:
+        - src: fixtures/postgres-api
+          dest: .
+    prompt: |
+      Plan Azure hosting for this production API without changing its data model
+      or database engine. Infer the resources from the repository and create
+      only architecture-plan.json using the same top-level shape described
+      below. Do not implement, install dependencies, run Azure commands, or
+      deploy.
+
+      Required top-level fields: profile, components, resources, assumptions,
+      dependencies, wellArchitected, and tradeoffs. wellArchitected must contain
+      reliability, security, costOptimization, operationalExcellence, and
+      performanceEfficiency arrays.
+    rubric:
+      - The plan preserves PostgreSQL and chooses Azure Database for PostgreSQL Flexible Server rather than Cosmos DB, Azure SQL, or a database rewrite.
+      - The plan selects managed web/API compute appropriate to the existing containerized Express application and does not select AKS from the Dockerfile alone.
+      - The production plan addresses PostgreSQL backup, restore, availability, connection security, identity or secret handling, monitoring, and capacity assumptions.
+      - The plan distinguishes repository evidence from reversible defaults and identifies deployment-time checks such as region, availability, and quota.
+      - No Azure side effect is attempted and no routine infrastructure question is delegated to the user.
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          required:
+            - azure-infrastructure-intent
+          disallowed:
+            - iac-compose
+      - type: file-exists
+        config:
+          path: architecture-plan.json
+      - type: run-command
+        config:
+          command: node
+          args:
+            - --input-type=module
+            - -e
+            - |
+              import { readFileSync } from "node:fs";
+              const plan = JSON.parse(readFileSync("architecture-plan.json", "utf8"));
+              if (!Array.isArray(plan.resources) || !Array.isArray(plan.assumptions)) process.exit(1);
+              if (!plan.wellArchitected || !Array.isArray(plan.wellArchitected.reliability)) process.exit(1);
+      - type: file-matches
+        config:
+          path: architecture-plan.json
+          pattern: '(?i)PostgreSQL Flexible Server'
+      - type: prompt
+        config:
+          scoring: binary
+          evidence:
+            - trajectory
+            - repo
+
+  - name: cost-conscious-static-sandbox
+    tags:
+      priority: p1
+      behavior: restraint
+    agent_environment:
+      files:
+        - src: fixtures/static-site
+          dest: .
+    prompt: |
+      This is a personal demonstration site with almost no traffic. Plan its
+      Azure infrastructure and create only architecture-plan.json. Do not
+      implement or deploy. Use the same fields: profile, components, resources,
+      assumptions, dependencies, wellArchitected, and tradeoffs.
+    rubric:
+      - The plan recognizes a client-only static site and chooses the sandbox profile.
+      - Azure Static Web Apps, or an equivalently simple managed static host, is the primary service.
+      - The plan avoids databases, AKS, App Service compute, API Management, Front Door, Firewall, private networking, and Key Vault because the repository has no matching capability.
+      - The plan keeps HTTPS and basic observability while explicitly accepting sandbox availability and recovery limits.
+      - The agent creates a plan only and performs no Azure operation.
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          required:
+            - azure-infrastructure-intent
+          disallowed:
+            - iac-compose
+      - type: file-exists
+        config:
+          path: architecture-plan.json
+      - type: file-matches
+        config:
+          path: architecture-plan.json
+          pattern: '(?is)"profile"\s*:\s*(?:"sandbox"|\{.{0,300}"name"\s*:\s*"sandbox")'
+      - type: file-matches
+        config:
+          path: architecture-plan.json
+          pattern: '(?i)Static Web Apps'
+      - type: prompt
+        config:
+          scoring: binary
+          evidence:
+            - trajectory
+            - repo
+
+  - name: sparse-static-site-to-iac-compose
+    tags:
+      priority: p0
+      behavior: end-to-end
+    agent_environment:
+      files:
+        - src: fixtures/static-site
+          dest: .
+    prompt: |
+      Put this personal demonstration site on Azure using this repository's
+      infrastructure workflow. We have not chosen any Azure resources. Inspect
+      the application, infer the smallest appropriate architecture, and carry
+      the decision through to the final iac-compose TypeScript infrastructure.
+
+      Create deployment/deploy.ts and deployment/infra.ts. Use direct authoring
+      when the inferred service is not supported by the iac-compose resource
+      contract. The deployment program must use defineDeployment and
+      deployment.provision. The provisioning entrypoint must export a non-empty
+      outputBicep array containing main.bicep and main.bicepparam and expose the
+      deployed site's resource ID, name, and hostname as outputs. Keep region,
+      environment, and collision-sensitive naming configurable.
+
+      Do not create an unsupported logical resource kind, install packages, run
+      Azure commands, grant roles outside authored IaC, or deploy anything.
+    rubric:
+      - The trajectory invokes azure-infrastructure-intent before iac-compose, making a clear handoff from sparse workload understanding to infrastructure authoring.
+      - Repository evidence is recognized as a client-only static Vite site, so the selected architecture is a sandbox Azure Static Web App with no database, registry, Kubernetes, API Management, Front Door, Firewall, or private network.
+      - Because Static Web Apps is not in the supported contract vocabulary, the final result uses direct TypeScript iac-compose authoring rather than inventing a resource kind.
+      - deploy.ts uses defineDeployment and deployment.provision with an explicit generated layer, while infra.ts exports non-empty main.bicep and main.bicepparam artifacts for Microsoft.Web/staticSites.
+      - The infrastructure enforces managed HTTPS, uses configurable or deterministic naming and location, and outputs only nonsecret resource identifiers and the hostname.
+      - No package installation, Azure execution, role grant outside IaC, or deployment occurs.
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          required:
+            - azure-infrastructure-intent
+            - iac-compose
+      - type: file-exists
+        config:
+          path: deployment/deploy.ts
+      - type: file-exists
+        config:
+          path: deployment/infra.ts
+      - type: file-not-exists
+        config:
+          path: config/resource-requirements.json
+      - type: file-matches
+        config:
+          path: deployment/deploy.ts
+          pattern: 'defineDeployment'
+      - type: file-matches
+        config:
+          path: deployment/deploy.ts
+          pattern: 'deployment\.provision'
+      - type: file-matches
+        config:
+          path: deployment/infra.ts
+          pattern: 'outputBicep'
+      - type: file-matches
+        config:
+          path: deployment/infra.ts
+          pattern: 'Microsoft\.Web/staticSites'
+      - type: file-matches
+        config:
+          path: deployment/infra.ts
+          pattern: 'main\.bicepparam'
+      - type: tool-calls
+        config:
+          disallowed:
+            - name: '^(bash|shell|run_command|runInTerminal)$'
+              command: '(?:^|[;&|]\s*|\n\s*)(?:az|azd)(?:\s|$)'
+      - type: prompt
+        config:
+          scoring: binary
+          evidence:
+            - trajectory
+            - repo
+
+  - name: ask-one-critical-regulated-question
+    tags:
+      priority: p0
+      behavior: safety
+    prompt: |
+      We will eventually define our existing production healthcare records
+      system through this repository's iac-compose workflow. It stores patient
+      data and serves users in the EU and US, but no residency, compliance,
+      recovery, or current database details are available yet. Begin the work,
+      but if a decision blocks a safe architecture, ask only the single most
+      important focused question. Do not create or modify files, run commands,
+      recommend a full service topology, or deploy anything.
+    rubric:
+      - The response asks exactly one focused question about a genuinely blocking requirement, preferably the authoritative data residency/compliance boundary or current data system and migration constraint.
+      - It does not ask the user to choose Azure products, SKUs, names, tags, monitoring, managed identity, TLS, or an IaC layout.
+      - It does not prematurely prescribe a full Azure service topology for regulated patient data.
+      - It makes no workspace or cloud changes and explains briefly why the answer is required.
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          required:
+            - azure-infrastructure-intent
+          disallowed:
+            - iac-compose
+      - type: diff-empty
+      - type: prompt
+        config:
+          scoring: binary
+          evidence:
+            - trajectory
+
+scoring:
+  threshold: 1.0

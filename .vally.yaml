@@ -1,0 +1,33 @@
+paths:
+  skills:
+    - .github/skills/
+  evals:
+    - evals/
+  results: vally-results/
+  evalFilenames:
+    - eval.yaml
+
+suites:
+  skills:
+    description: All behavioral evaluations for the project skills.
+    evals:
+      - evals/azure-infrastructure-intent/eval.yaml
+      - evals/iac-compose/eval.yaml
+
+  skill-routing:
+    description: Critical routing and safety behavior for both skills.
+    evals:
+      - evals/azure-infrastructure-intent/eval.yaml
+      - evals/iac-compose/eval.yaml
+    filter:
+      priority: p0
+
+  azure-infrastructure-intent:
+    description: Sparse-request recognition and Azure architecture quality.
+    evals:
+      - evals/azure-infrastructure-intent/eval.yaml
+
+  iac-compose:
+    description: Contract and direct TypeScript infrastructure authoring.
+    evals:
+      - evals/iac-compose/eval.yaml
