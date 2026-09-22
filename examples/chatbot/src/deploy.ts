@@ -7,19 +7,27 @@ import { logicApp } from "./components/logic-app/index.js";
 import { shared } from "./components/shared/index.js";
 import { prepareEnvironment } from "./runtime/environment.js";
 
-const componentDeployments = {
+const componentDeployments: Record<
+  string,
+  (deployment: Deployment) => Promise<void>
+> = {
   shared: shared,
   agent: agent,
   "agent-server": agentServer,
   "function-app": functionApp,
   frontend: frontend,
   "logic-app": logicApp,
-} satisfies Record<string, (deployment: Deployment) => Promise<void>>;
+};
 
 export default defineDeployment(async (deployment) => {
   await prepareEnvironment(deployment);
   if (deployment.component) {
-    const deployComponent = componentDeployments[deployment.component];
+    const deployComponent = Object.hasOwn(
+      componentDeployments,
+      deployment.component,
+    )
+      ? componentDeployments[deployment.component]
+      : undefined;
     if (!deployComponent) {
       throw new Error(
         `Unknown chatbot component '${deployment.component}'. Expected one of: ${Object.keys(componentDeployments).join(", ")}.`,

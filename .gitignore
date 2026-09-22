@@ -1,5 +1,6 @@
 dist/
 node_modules/
 .iac-compose-generated.json
+vally-results/
 examples/chatbot/.generated/
 examples/contoso/.generated/
