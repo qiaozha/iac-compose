@@ -117,6 +117,18 @@ Before generating IaC, identify:
 Avoid hidden coupling. If component B consumes an output from component A,
 provision A first and represent the output explicitly.
 
+## Implementation handoff
+
+Once intent, profile, and dependencies are stable, emit
+`implementation-contract.json` using the implementation contract reference.
+The contract records the final workload-specific graph and iac-compose
+authoring route. It does not record how the design was discovered.
+
+If internal reference matching informed the design, translate it into
+customer-evidence-based services, controls, assumptions, and tradeoffs. Do not
+include the matched example, catalog metadata, source provenance, or candidate
+scores.
+
 ## Sparse-request examples
 
 ### "Deploy this Node API to Azure"

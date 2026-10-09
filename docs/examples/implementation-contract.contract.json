@@ -1,0 +1,183 @@
+{
+  "schemaVersion": "1.0",
+  "solution": {
+    "name": "orders-api"
+  },
+  "profile": "standard",
+  "authoringMode": "contract",
+  "components": [
+    {
+      "id": "api",
+      "kind": "http-api",
+      "source": "components/api",
+      "runtime": "node",
+      "protocol": "https",
+      "lifecycle": "request-driven"
+    }
+  ],
+  "resources": [
+    {
+      "id": "monitoring",
+      "service": "Azure Monitor",
+      "capability": "Application telemetry, logs, and traces",
+      "requiredBy": ["api"],
+      "ownership": "shared",
+      "implementation": {
+        "mode": "contract",
+        "kind": "application-monitoring"
+      },
+      "configuration": {},
+      "controls": [
+        "Collect requests, dependencies, exceptions, logs, and traces",
+        "Keep telemetry retention configurable"
+      ],
+      "produces": [
+        "applicationInsightsConnectionString",
+        "applicationInsightsName"
+      ],
+      "consumes": [],
+      "access": []
+    },
+    {
+      "id": "uploads",
+      "service": "Azure Blob Storage",
+      "capability": "Durable object storage for uploaded order documents",
+      "requiredBy": ["api"],
+      "ownership": "component",
+      "implementation": {
+        "mode": "contract",
+        "kind": "object-storage"
+      },
+      "configuration": {
+        "containers": ["uploads"]
+      },
+      "controls": [
+        "HTTPS only",
+        "Shared-key access disabled",
+        "Blob soft delete enabled"
+      ],
+      "produces": [
+        "storageBlobEndpoint",
+        "storageAccountResourceId"
+      ],
+      "consumes": [],
+      "access": [
+        {
+          "principalOutput": "backendIdentityPrincipalId",
+          "role": "Storage Blob Data Contributor"
+        }
+      ]
+    },
+    {
+      "id": "apiCompute",
+      "service": "Azure App Service",
+      "capability": "Managed hosting for the containerized HTTP API",
+      "requiredBy": ["api"],
+      "ownership": "component",
+      "implementation": {
+        "mode": "contract",
+        "kind": "container-host"
+      },
+      "configuration": {
+        "source": "components/api",
+        "containerPort": 8080,
+        "healthPath": "/health",
+        "runtimeSettings": {
+          "AZURE_STORAGE_BLOB_ENDPOINT": "${output.storageBlobEndpoint}",
+          "APPLICATIONINSIGHTS_CONNECTION_STRING": "${output.applicationInsightsConnectionString}"
+        }
+      },
+      "controls": [
+        "HTTPS only",
+        "Minimum TLS 1.2",
+        "Managed identity",
+        "Health probe at /health"
+      ],
+      "produces": [
+        "backendBaseUrl",
+        "backendIdentityPrincipalId"
+      ],
+      "consumes": [
+        "storageBlobEndpoint",
+        "applicationInsightsConnectionString"
+      ],
+      "access": []
+    }
+  ],
+  "parameters": [
+    {
+      "name": "AZURE_LOCATION",
+      "required": true,
+      "secret": false,
+      "reason": "Select a region that supports the required services"
+    },
+    {
+      "name": "AZURE_ENV_NAME",
+      "required": true,
+      "secret": false,
+      "reason": "Create deterministic environment-specific names"
+    }
+  ],
+  "dependencies": [
+    {
+      "producer": "uploads",
+      "consumer": "apiCompute",
+      "via": "storageBlobEndpoint"
+    },
+    {
+      "producer": "monitoring",
+      "consumer": "apiCompute",
+      "via": "applicationInsightsConnectionString"
+    }
+  ],
+  "deploymentOrder": ["shared", "api"],
+  "assumptions": [
+    {
+      "decision": "Use one production region initially",
+      "evidence": "No cross-region recovery objective was provided",
+      "confidence": "defaulted",
+      "revisitTrigger": "A regional outage objective is defined"
+    }
+  ],
+  "wellArchitected": {
+    "reliability": [
+      "Probe /health and enable blob soft delete",
+      "Validate application behavior during storage dependency failures"
+    ],
+    "security": [
+      "Use managed identity and scoped Storage Blob Data Contributor access",
+      "Disable shared-key access and require TLS"
+    ],
+    "costOptimization": [
+      "Start with the smallest production-capable App Service capacity",
+      "Keep telemetry retention and compute capacity configurable"
+    ],
+    "operationalExcellence": [
+      "Correlate application logs, requests, dependencies, and exceptions",
+      "Dry-run every deployment before Azure execution"
+    ],
+    "performanceEfficiency": [
+      "Load-test API concurrency and upload sizes before scaling",
+      "Scale stateless API instances horizontally when measurements require it"
+    ]
+  },
+  "tradeoffs": [
+    {
+      "decision": "Start in one region",
+      "benefit": "Lower cost and operational complexity",
+      "cost": "No regional outage protection",
+      "revisitTrigger": "The business defines a regional availability target"
+    }
+  ],
+  "validation": [
+    {
+      "stage": "local",
+      "check": "Validate generated contracts, typecheck the deployment, and complete an iac-compose dry run"
+    },
+    {
+      "stage": "deployment",
+      "check": "Verify provider registration, regional availability, quota, and deployment-principal roles"
+    }
+  ],
+  "unresolved": []
+}

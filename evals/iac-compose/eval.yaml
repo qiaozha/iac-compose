@@ -255,5 +255,102 @@ stimuli:
             - trajectory
             - diff
 
+  - name: implement-inferred-basic-web-contract
+    tags:
+      priority: p1
+      behavior: implementation-contract
+    agent_environment:
+      files:
+        - src: fixtures/inferred-basic-web
+          dest: .
+    prompt: |
+      implementation-contract.json is the approved resource plan. Do not
+      perform intent recognition, repeat architecture discovery, or reconsider
+      its services. Implement its direct authoring mode with iac-compose.
+
+      Create only deployment/deploy.ts and deployment/infra.ts. deploy.ts must
+      ensure the configured resource group, provision an explicit
+      deployment/.generated/web layer, and publish returned outputs. infra.ts
+      must export non-empty main.bicep and main.bicepparam artifacts for every
+      resource type and control in the contract.
+
+      Do not modify implementation-contract.json, invent a contract kind,
+      install dependencies, run Azure commands, grant roles outside authored
+      IaC, or deploy.
+    rubric:
+      - The approved implementation contract routes directly to iac-compose without invoking infrastructure intent recognition or repeating service selection.
+      - deploy.ts uses defineDeployment, ensureResourceGroup, deployment.provision with the web layer, and deployment.env with returned outputs.
+      - infra.ts emits main.bicep and main.bicepparam for Microsoft.Web serverfarms/sites, Microsoft.Sql servers/databases and Entra administrator, managed identity, Log Analytics, and Application Insights.
+      - Location, environment, names, tenant, and SQL Entra administrator inputs are parameterized; HTTPS, minimum TLS 1.2, disabled FTP, and password-free outputs are explicit.
+      - Every declared output and dependency needed by the web app is wired from returned infrastructure values, and the database identity setup remains an explicit deployment-time validation rather than a stored SQL credential.
+      - Neither generated files nor the customer-facing response mention an architecture catalog, reference example, source document, source commit, or sample repository.
+      - Only the requested files are created and no package, Azure, role-grant, or deployment side effect occurs.
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          required:
+            - iac-compose
+          disallowed:
+            - azure-infrastructure-intent
+      - type: file-exists
+        config:
+          path: deployment/deploy.ts
+      - type: file-exists
+        config:
+          path: deployment/infra.ts
+      - type: file-matches
+        config:
+          path: deployment/deploy.ts
+          pattern: 'defineDeployment'
+      - type: file-matches
+        config:
+          path: deployment/deploy.ts
+          pattern: 'ensureResourceGroup'
+      - type: file-matches
+        config:
+          path: deployment/deploy.ts
+          pattern: 'deployment\.provision'
+      - type: file-matches
+        config:
+          path: deployment/infra.ts
+          pattern: 'Microsoft\.Sql/servers'
+      - type: file-matches
+        config:
+          path: deployment/infra.ts
+          pattern: 'Microsoft\.Web/sites'
+      - type: file-matches
+        config:
+          path: deployment/infra.ts
+          pattern: '(?i)(minTlsVersion|minimumTlsVersion)'
+      - type: file-not-exists
+        config:
+          path: config/resource-requirements.json
+      - type: run-command
+        config:
+          command: node
+          args:
+            - --input-type=module
+            - -e
+            - |
+              import { readFileSync } from "node:fs";
+              const source = [
+                readFileSync("implementation-contract.json", "utf8"),
+                readFileSync("deployment/deploy.ts", "utf8"),
+                readFileSync("deployment/infra.ts", "utf8")
+              ].join("\n");
+              if (/(Architecture Center|reference architecture|referenceArchitecture|architectureCenter|sourceCommit|officialImplementationUrls|MicrosoftDocs|Azure-Samples)/i.test(source)) process.exit(1);
+      - type: tool-calls
+        config:
+          disallowed:
+            - name: '^(bash|shell|run_command|runInTerminal)$'
+              command: '(?:^|[;&|]\s*|\n\s*)(?:az|azd)(?:\s|$)'
+      - type: prompt
+        config:
+          scoring: binary
+          evidence:
+            - trajectory
+            - repo
+
 scoring:
   threshold: 1.0

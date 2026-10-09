@@ -1,0 +1,108 @@
+{
+  "schemaVersion": "1.0",
+  "solution": {
+    "name": "portfolio-site"
+  },
+  "profile": "sandbox",
+  "authoringMode": "direct",
+  "components": [
+    {
+      "id": "site",
+      "kind": "static-site",
+      "source": ".",
+      "runtime": "static",
+      "protocol": "https",
+      "lifecycle": "request-driven"
+    }
+  ],
+  "resources": [
+    {
+      "id": "siteHosting",
+      "service": "Azure Static Web Apps",
+      "capability": "Managed static content hosting with HTTPS",
+      "requiredBy": ["site"],
+      "ownership": "component",
+      "implementation": {
+        "mode": "direct",
+        "azureResourceTypes": [
+          "Microsoft.Web/staticSites"
+        ]
+      },
+      "configuration": {
+        "sku": "Free"
+      },
+      "controls": [
+        "Managed HTTPS",
+        "Deterministic collision-safe naming",
+        "No server runtime or durable local state"
+      ],
+      "produces": [
+        "STATIC_SITE_NAME",
+        "STATIC_SITE_RESOURCE_ID",
+        "STATIC_SITE_HOSTNAME"
+      ],
+      "consumes": [],
+      "access": []
+    }
+  ],
+  "parameters": [
+    {
+      "name": "AZURE_LOCATION",
+      "required": true,
+      "secret": false,
+      "reason": "Select the deployment region"
+    },
+    {
+      "name": "AZURE_ENV_NAME",
+      "required": true,
+      "secret": false,
+      "reason": "Create an environment-specific site name"
+    }
+  ],
+  "dependencies": [],
+  "deploymentOrder": ["site"],
+  "assumptions": [
+    {
+      "decision": "Use the Free tier for a low-traffic demonstration",
+      "evidence": "The workload is a personal demonstration with no production SLA",
+      "confidence": "explicit",
+      "revisitTrigger": "Traffic, custom-domain, or production requirements exceed Free-tier capabilities"
+    }
+  ],
+  "wellArchitected": {
+    "reliability": [
+      "Accept the sandbox service limits and redeploy from source if recovery is needed"
+    ],
+    "security": [
+      "Use managed HTTPS and expose only public static content"
+    ],
+    "costOptimization": [
+      "Use the Free tier and avoid unused compute, databases, and private networking"
+    ],
+    "operationalExcellence": [
+      "Deploy from checked-in source through a repeatable dry-run-validated workflow"
+    ],
+    "performanceEfficiency": [
+      "Use the managed static content edge and measure asset size before adding another CDN"
+    ]
+  },
+  "tradeoffs": [
+    {
+      "decision": "Use sandbox hosting without a separate enterprise edge",
+      "benefit": "Minimal fixed cost and operational overhead",
+      "cost": "No enterprise WAF or custom global failover topology",
+      "revisitTrigger": "The site becomes a production business endpoint"
+    }
+  ],
+  "validation": [
+    {
+      "stage": "local",
+      "check": "Compile the TypeScript provisioning entrypoint and complete an iac-compose dry run"
+    },
+    {
+      "stage": "deployment",
+      "check": "Verify Microsoft.Web provider registration and regional Static Web Apps availability"
+    }
+  ],
+  "unresolved": []
+}

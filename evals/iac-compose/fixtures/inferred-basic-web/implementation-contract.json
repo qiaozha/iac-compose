@@ -1,0 +1,207 @@
+{
+  "schemaVersion": "1.0",
+  "solution": {
+    "name": "employee-portal-poc"
+  },
+  "profile": "sandbox",
+  "authoringMode": "direct",
+  "components": [
+    {
+      "id": "web",
+      "kind": "web",
+      "source": ".",
+      "runtime": "node",
+      "protocol": "https",
+      "lifecycle": "request-driven"
+    }
+  ],
+  "resources": [
+    {
+      "id": "webIdentity",
+      "service": "Azure managed identity",
+      "capability": "Passwordless workload identity",
+      "requiredBy": ["web"],
+      "ownership": "component",
+      "implementation": {
+        "mode": "direct",
+        "azureResourceTypes": ["Microsoft.ManagedIdentity/userAssignedIdentities"]
+      },
+      "configuration": {},
+      "controls": ["Use the identity for Azure service access"],
+      "produces": ["WEB_IDENTITY_CLIENT_ID", "WEB_IDENTITY_PRINCIPAL_ID"],
+      "consumes": [],
+      "access": []
+    },
+    {
+      "id": "webHosting",
+      "service": "Azure App Service",
+      "capability": "Managed HTTPS web application hosting",
+      "requiredBy": ["web"],
+      "ownership": "component",
+      "implementation": {
+        "mode": "direct",
+        "azureResourceTypes": [
+          "Microsoft.Web/serverfarms",
+          "Microsoft.Web/sites",
+          "Microsoft.Web/sites/config"
+        ]
+      },
+      "configuration": {
+        "sku": "B1",
+        "authentication": "microsoft-entra"
+      },
+      "controls": [
+        "Require authentication",
+        "HTTPS only",
+        "Minimum TLS 1.2",
+        "FTP disabled"
+      ],
+      "produces": ["WEB_APP_NAME", "WEB_APP_URL"],
+      "consumes": ["WEB_IDENTITY_CLIENT_ID", "SQL_SERVER_FQDN", "SQL_DATABASE_NAME", "APPLICATIONINSIGHTS_CONNECTION_STRING"],
+      "access": []
+    },
+    {
+      "id": "database",
+      "service": "Azure SQL Database",
+      "capability": "Relational application data",
+      "requiredBy": ["web"],
+      "ownership": "component",
+      "implementation": {
+        "mode": "direct",
+        "azureResourceTypes": [
+          "Microsoft.Sql/servers",
+          "Microsoft.Sql/servers/administrators",
+          "Microsoft.Sql/servers/databases",
+          "Microsoft.Sql/servers/firewallRules"
+        ]
+      },
+      "configuration": {
+        "sku": "Basic",
+        "authentication": "microsoft-entra"
+      },
+      "controls": [
+        "No SQL password",
+        "Configure an Entra administrator",
+        "Use proof-of-concept public network access with an explicit firewall rule"
+      ],
+      "produces": ["SQL_SERVER_NAME", "SQL_SERVER_FQDN", "SQL_DATABASE_NAME"],
+      "consumes": [],
+      "access": [
+        {
+          "principalOutput": "WEB_IDENTITY_PRINCIPAL_ID",
+          "role": "Database user configured after provisioning"
+        }
+      ]
+    },
+    {
+      "id": "monitoring",
+      "service": "Azure Monitor",
+      "capability": "Central application telemetry",
+      "requiredBy": ["web"],
+      "ownership": "shared",
+      "implementation": {
+        "mode": "direct",
+        "azureResourceTypes": [
+          "Microsoft.OperationalInsights/workspaces",
+          "Microsoft.Insights/components"
+        ]
+      },
+      "configuration": {
+        "retentionDays": 30
+      },
+      "controls": ["Collect request, dependency, exception, and platform telemetry"],
+      "produces": ["APPLICATIONINSIGHTS_CONNECTION_STRING"],
+      "consumes": [],
+      "access": []
+    }
+  ],
+  "parameters": [
+    {
+      "name": "AZURE_LOCATION",
+      "required": true,
+      "secret": false,
+      "reason": "Deployment region"
+    },
+    {
+      "name": "AZURE_ENV_NAME",
+      "required": true,
+      "secret": false,
+      "reason": "Environment-specific naming"
+    },
+    {
+      "name": "AZURE_TENANT_ID",
+      "required": true,
+      "secret": false,
+      "reason": "Web authentication tenant"
+    },
+    {
+      "name": "SQL_ENTRA_ADMIN_OBJECT_ID",
+      "required": true,
+      "secret": false,
+      "reason": "Azure SQL Entra administrator"
+    },
+    {
+      "name": "SQL_ENTRA_ADMIN_LOGIN",
+      "required": true,
+      "secret": false,
+      "reason": "Azure SQL Entra administrator display name"
+    }
+  ],
+  "dependencies": [
+    {
+      "producer": "webIdentity",
+      "consumer": "webHosting",
+      "via": "WEB_IDENTITY_CLIENT_ID"
+    },
+    {
+      "producer": "database",
+      "consumer": "webHosting",
+      "via": "SQL_SERVER_FQDN"
+    },
+    {
+      "producer": "database",
+      "consumer": "webHosting",
+      "via": "SQL_DATABASE_NAME"
+    },
+    {
+      "producer": "monitoring",
+      "consumer": "webHosting",
+      "via": "APPLICATIONINSIGHTS_CONNECTION_STRING"
+    }
+  ],
+  "deploymentOrder": ["shared", "web"],
+  "assumptions": [
+    {
+      "decision": "Use proof-of-concept single-region capacity",
+      "evidence": "The workload has no production SLA",
+      "confidence": "explicit",
+      "revisitTrigger": "The portal moves to production"
+    }
+  ],
+  "wellArchitected": {
+    "reliability": ["Accept single-instance availability for the proof of concept"],
+    "security": ["Use Entra authentication and managed identity without SQL passwords"],
+    "costOptimization": ["Use B1 App Service and Basic Azure SQL capacity"],
+    "operationalExcellence": ["Collect application and platform telemetry"],
+    "performanceEfficiency": ["Load-test before increasing App Service or database capacity"]
+  },
+  "tradeoffs": [
+    {
+      "decision": "Use public data-plane access for the proof of concept",
+      "benefit": "Avoid private networking fixed cost and complexity",
+      "cost": "Larger network attack surface",
+      "revisitTrigger": "Before production or when handling sensitive data"
+    }
+  ],
+  "validation": [
+    {
+      "stage": "local",
+      "check": "Typecheck provisioning source and complete an iac-compose dry run"
+    },
+    {
+      "stage": "deployment",
+      "check": "Verify region availability and create the contained database user for the web identity"
+    }
+  ],
+  "unresolved": []
+}

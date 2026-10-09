@@ -1,11 +1,11 @@
 ---
 name: azure-infrastructure-intent
-description: Infer Azure resource needs from a sparse business request or an existing application, select a cost-conscious Azure architecture using Well-Architected Framework guidance, and generate the infrastructure with iac-compose. Use for outcome-based Azure requests in an iac-compose workflow when the user has not named the resources, topology, security controls, or operational dependencies. Do not use when the resource plan is already complete; invoke iac-compose directly.
+description: Infer Azure resource needs from a sparse business request or an existing application, select a cost-conscious Azure architecture using Well-Architected Framework guidance, emit a customer-specific implementation contract, and generate infrastructure with iac-compose. Use for outcome-based Azure requests when the user has not named the resources, topology, security controls, or operational dependencies. Do not use when the resource plan is already complete; invoke iac-compose directly.
 license: MIT
 compatibility: Designed to pair with the iac-compose project skill. Local generation requires Node.js 20.6 or newer; Azure validation and deployment require azd, Azure CLI, and authenticated Azure access.
 metadata:
   author: qiaozha
-  version: "1.1"
+  version: "1.3"
 ---
 
 # Infer Azure intent and generate infrastructure
@@ -13,6 +13,10 @@ metadata:
 Translate the user's desired outcome and repository evidence into the smallest
 complete Azure architecture that is secure, operable, scalable, and
 cost-conscious. Do not require the user to know Azure product names.
+
+The customer-visible boundary is `implementation-contract.json`. Internal
+reference matching can improve completeness, but must never appear in that
+contract. If provenance is explicitly requested, provide it separately.
 
 Unless the user explicitly asks only for advice or a plan, continue through
 infrastructure generation and local validation. Apply the `iac-compose` skill
@@ -40,6 +44,10 @@ user requests infrastructure implementation.
   reliability do not override cost or simplicity without a workload reason.
 - Do not add a service merely because it is common. Every resource must satisfy
   an observed or inferred capability.
+- Treat Azure Architecture Center matching as private decision support. Never
+  put the catalog, a matched example, its title, ID, URL, source commit, or
+  implementation repository in the implementation contract or generated
+  infrastructure. Mention provenance separately only when explicitly asked.
 - Do not omit a required control because the contract generator cannot express
   it. Use direct TypeScript authoring when necessary.
 - Do not invent `iac-compose` resource kinds or output names.
@@ -73,6 +81,15 @@ Read [the intent model](references/intent-model.md) and inspect:
 Treat explicit user requirements as highest priority, followed by repository
 evidence, existing infrastructure choices, framework conventions, and finally
 documented defaults. Never infer architecture from a product name alone.
+
+After building the workload evidence, read
+[the Architecture Center workflow](references/architecture-center-workflow.md)
+and use
+[the pinned architecture catalog](references/architecture-catalog.json).
+Use the catalog to check whether the workload aligns with a proven topology,
+but keep the lookup and match internal. The catalog is discovery metadata, not
+a deployable topology. Read the best candidate's full pinned content before
+selecting or generating resources.
 
 ### 2. Build the intent model
 
@@ -192,6 +209,23 @@ Build a resource graph with:
 - identity and RBAC edges;
 - lifecycle actions that occur after provisioning.
 
+Create an implementation contract that conforms to
+[the implementation contract schema](references/implementation-contract.md).
+The contract is the customer-visible handoff and contains only the inferred
+workload design:
+
+- solution profile and final authoring mode;
+- components, source paths, protocols, and lifecycle;
+- resources, ownership, required capabilities, configuration, and controls;
+- supported contract kinds or direct Azure resource types;
+- outputs, consumers, identities, access grants, and dependency edges;
+- parameters, deployment order, assumptions, tradeoffs, unresolved blockers,
+  and validation requirements.
+
+Do not include internal catalog or source provenance in this contract. Explain
+service choices from user requirements and repository evidence, never by
+saying that the workload matches a reference example.
+
 Then apply the `iac-compose` skill:
 
 - use contract-driven generation only when every required resource and
@@ -205,9 +239,12 @@ Then apply the `iac-compose` skill:
 - provision producers before consumers and wire values through declared
   outputs rather than reconstructed names.
 
-Do not stop after producing a service list. Create the resource contracts or
-TypeScript provisioning layers, deployment program, environment parameters,
-and required package updates.
+Do not stop after producing a service list. First create
+`implementation-contract.json`. If the user requested only the implementation
+contract, stop without invoking iac-compose. Otherwise, use the contract to
+create the resource requirements and solution contracts or direct TypeScript
+provisioning layers, deployment program, environment parameters, and required
+package updates.
 
 ### 8. Verify the emitted infrastructure
 
@@ -238,3 +275,7 @@ Report concisely:
 - files created or changed;
 - validation performed;
 - deployment-time decisions or commands still requiring user approval.
+
+Do not name or cite an internally matched Architecture Center example in the
+completion report unless the user explicitly requested provenance. Even then,
+keep it separate from the implementation contract and generated infrastructure.

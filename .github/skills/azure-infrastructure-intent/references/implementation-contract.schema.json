@@ -1,0 +1,471 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qiaozha/iac-compose/schemas/implementation-contract-1.0.json",
+  "title": "iac-compose implementation contract",
+  "description": "Customer-specific handoff from Azure workload intent recognition to iac-compose infrastructure authoring.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "solution",
+    "profile",
+    "authoringMode",
+    "components",
+    "resources",
+    "parameters",
+    "dependencies",
+    "deploymentOrder",
+    "assumptions",
+    "wellArchitected",
+    "tradeoffs",
+    "validation",
+    "unresolved"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0",
+      "description": "Exact implementation contract schema version."
+    },
+    "solution": {
+      "type": "object",
+      "description": "Stable identity for the complete workload solution.",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable solution name; environment names are separate deployment parameters."
+        }
+      }
+    },
+    "profile": {
+      "enum": ["sandbox", "standard", "mission-critical/regulated"],
+      "description": "Workload criticality profile that controls baseline reliability, security, operations, performance, and cost decisions."
+    },
+    "authoringMode": {
+      "enum": ["contract", "direct", "hybrid"],
+      "description": "Final iac-compose authoring route for the complete resource graph."
+    },
+    "components": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Deployable application units and lifecycle owners.",
+      "items": {
+        "$ref": "#/$defs/component"
+      }
+    },
+    "resources": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Azure services and logical resources required by the workload.",
+      "items": {
+        "$ref": "#/$defs/resource"
+      }
+    },
+    "parameters": {
+      "type": "array",
+      "description": "Deployment input declarations; parameter values are never stored in this contract.",
+      "items": {
+        "$ref": "#/$defs/parameter"
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "description": "Producer-to-consumer resource edges established through nonsecret outputs.",
+      "items": {
+        "$ref": "#/$defs/dependency"
+      }
+    },
+    "deploymentOrder": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Ordered component IDs and explicit shared-layer IDs.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "description": "Evidence-qualified architecture decisions and reversible defaults.",
+      "items": {
+        "$ref": "#/$defs/assumption"
+      }
+    },
+    "wellArchitected": {
+      "type": "object",
+      "description": "Workload-specific requirements for all five Azure Well-Architected Framework pillars.",
+      "additionalProperties": false,
+      "required": [
+        "reliability",
+        "security",
+        "costOptimization",
+        "operationalExcellence",
+        "performanceEfficiency"
+      ],
+      "properties": {
+        "reliability": {
+          "description": "Failure, availability, backup, restore, and recovery requirements.",
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "security": {
+          "description": "Identity, least privilege, secret, encryption, and exposure requirements.",
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "costOptimization": {
+          "description": "Capacity, elasticity, retention, and avoidable-cost requirements.",
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "operationalExcellence": {
+          "description": "Deployment, observability, release, and incident-response requirements.",
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "performanceEfficiency": {
+          "description": "Scaling, concurrency, quota, partitioning, and latency requirements.",
+          "$ref": "#/$defs/nonEmptyStrings"
+        }
+      }
+    },
+    "tradeoffs": {
+      "type": "array",
+      "description": "Explicitly accepted costs or risks and their revisit triggers.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["decision", "benefit", "cost", "revisitTrigger"],
+        "properties": {
+          "decision": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Selected design choice."
+          },
+          "benefit": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Quality, capability, or simplicity gained by the choice."
+          },
+          "cost": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Money, complexity, latency, availability, or risk introduced."
+          },
+          "revisitTrigger": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Measurable event that requires reconsidering the choice."
+          }
+        }
+      }
+    },
+    "validation": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Measurable local and deployment-time validation gates.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["stage", "check"],
+        "properties": {
+          "stage": {
+            "enum": ["local", "deployment"],
+            "description": "Whether the gate runs without Azure side effects or against deployment context."
+          },
+          "check": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Specific validation that must be performed."
+          }
+        }
+      }
+    },
+    "unresolved": {
+      "type": "array",
+      "description": "Blocking architecture decisions; this array must be empty before implementation.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["decision", "impact"],
+        "properties": {
+          "decision": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Decision or required input that remains unresolved."
+          },
+          "impact": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Why implementation cannot proceed safely without resolving it."
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "nonEmptyStrings": {
+      "type": "array",
+      "minItems": 1,
+      "description": "One or more non-empty requirement statements.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "component": {
+      "type": "object",
+      "description": "Deployable application unit or lifecycle owner.",
+      "additionalProperties": true,
+      "required": ["id", "kind", "lifecycle"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique logical component identifier."
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Component role, such as http-api, worker, static-site, or hosted-agent."
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Application source directory relative to the solution package."
+        },
+        "runtime": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Runtime family, such as node, python, container, or static."
+        },
+        "protocol": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Primary component interface, such as https, grpc, queue, or none."
+        },
+        "lifecycle": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Execution shape, such as request-driven, event-driven, scheduled, or batch."
+        }
+      }
+    },
+    "resource": {
+      "type": "object",
+      "description": "Azure service or logical infrastructure resource required by the workload.",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "service",
+        "capability",
+        "requiredBy",
+        "ownership",
+        "implementation",
+        "configuration",
+        "controls",
+        "produces",
+        "consumes",
+        "access"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique logical resource identifier."
+        },
+        "service": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Customer-readable Azure service name."
+        },
+        "capability": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Workload requirement satisfied by this resource."
+        },
+        "requiredBy": {
+          "description": "Component IDs that require this resource.",
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "ownership": {
+          "enum": ["shared", "component"],
+          "description": "Whether the resource belongs to one component or a shared provisioning layer."
+        },
+        "implementation": {
+          "description": "Discriminated authoring route for this resource.",
+          "oneOf": [
+            {
+              "type": "object",
+              "description": "Translate this resource into a supported iac-compose resource kind.",
+              "additionalProperties": false,
+              "required": ["mode", "kind"],
+              "properties": {
+                "mode": {
+                  "const": "contract",
+                  "description": "Use contract-driven generation."
+                },
+                "kind": {
+                  "enum": [
+                    "ai-project",
+                    "application-monitoring",
+                    "authorized-api-connection",
+                    "bot-identity",
+                    "configuration-store",
+                    "container-host",
+                    "container-registry",
+                    "document-database",
+                    "model-deployment",
+                    "object-storage",
+                    "teams-application",
+                    "workflow-host"
+                  ],
+                  "description": "Exact supported iac-compose resource kind."
+                }
+              }
+            },
+            {
+              "type": "object",
+              "description": "Implement this resource through direct TypeScript provisioning.",
+              "additionalProperties": false,
+              "required": ["mode", "azureResourceTypes"],
+              "properties": {
+                "mode": {
+                  "const": "direct",
+                  "description": "Use direct TypeScript authoring."
+                },
+                "azureResourceTypes": {
+                  "type": "array",
+                  "minItems": 1,
+                  "description": "Provider-qualified ARM resource types required to implement the capability and controls.",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9.]+/.+"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "configuration": {
+          "type": "object",
+          "description": "Kind- or service-specific desired configuration without secret values."
+        },
+        "controls": {
+          "description": "Testable security, reliability, cost, operations, and performance requirements.",
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "produces": {
+          "type": "array",
+          "description": "Nonsecret logical outputs made available to other resources or lifecycle steps.",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "consumes": {
+          "type": "array",
+          "description": "Logical outputs required from other declared resources.",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "access": {
+          "type": "array",
+          "description": "Identity and least-privilege permission edges.",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "principalOutput": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Logical principal ID output produced by another declared resource."
+              },
+              "role": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Least-privilege role or explicit post-provisioning access operation."
+              }
+            }
+          }
+        }
+      }
+    },
+    "parameter": {
+      "type": "object",
+      "description": "Deployment input declaration without an embedded value.",
+      "additionalProperties": false,
+      "required": ["name", "required", "secret", "reason"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Environment variable or deployment parameter name."
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Whether generation or deployment can proceed without the input."
+        },
+        "secret": {
+          "type": "boolean",
+          "description": "Whether the value requires secret storage and redaction."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Why the workload requires the input."
+        }
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "description": "Output-based ordering edge between two declared resources.",
+      "additionalProperties": false,
+      "required": ["producer", "consumer", "via"],
+      "properties": {
+        "producer": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Resource ID that produces the output."
+        },
+        "consumer": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Resource ID that consumes the output."
+        },
+        "via": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Logical output name connecting producer and consumer."
+        }
+      }
+    },
+    "assumption": {
+      "type": "object",
+      "description": "Evidence-qualified architecture decision or reversible default.",
+      "additionalProperties": true,
+      "required": ["decision", "evidence", "confidence", "revisitTrigger"],
+      "properties": {
+        "decision": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Selected behavior or default."
+        },
+        "evidence": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Prompt, repository, existing infrastructure, or workload-profile evidence."
+        },
+        "confidence": {
+          "enum": ["explicit", "evidenced", "defaulted", "unresolved"],
+          "description": "Strength and origin of the conclusion."
+        },
+        "revisitTrigger": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Event or threshold that requires reconsidering the decision."
+        }
+      }
+    }
+  }
+}
