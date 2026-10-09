@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires Node.js 20.6 or newer. Azure execution requires Azure Developer CLI (azd) 1.30 or newer, Azure CLI, and authenticated Azure access.
 metadata:
   author: qiaozha
-  version: "1.2"
+  version: "1.4"
 ---
 
 # Define infrastructure with iac-compose
@@ -18,6 +18,12 @@ When the user describes a workload outcome but does not identify the Azure
 resources, first apply the `azure-infrastructure-intent` skill. Carry its
 workload profile, assumptions, service choices, and Well-Architected controls
 into this authoring workflow.
+
+When infrastructure intent recognition provides
+`implementation-contract.json`, read
+[the implementation contract handoff](references/implementation-contract-handoff.md).
+Treat the contract as the complete customer-specific resource plan. Do not
+repeat reference discovery or expose any internal architecture match.
 
 Do not apply this skill to advice-only or architecture-plan-only requests. It
 starts when resource implementation, generation, validation, or execution is
@@ -39,6 +45,9 @@ requested.
   effects depend on earlier steps.
 - Fail explicitly for missing required configuration, unknown components,
   unsupported resource kinds, unresolved output bindings, or missing outputs.
+- Keep internal architecture-catalog titles, IDs, URLs, source commits, sample
+  links, and candidate scores out of generated source. If the user explicitly
+  requested provenance, report it separately from infrastructure artifacts.
 - A dry run may compile provisioning source and update generated local
   artifacts, but it must not perform Azure or application side effects.
 - Do not run a real deployment, `validate --grant`, or `down` unless the user
@@ -76,7 +85,10 @@ Identify:
 - application components, their source directories, and Dockerfiles;
 - the intended Azure subscription, tenant, scope, environment names, and
   locations when they are already configured;
-- existing output names and consumers.
+- existing output names and consumers;
+- an existing `implementation-contract.json` and its final authoring mode,
+  resource ownership, outputs, dependency edges, blockers, and validation
+  requirements.
 
 Do not replace a working project structure with a generic template.
 
@@ -101,6 +113,7 @@ inherited keys such as `toString` cannot be selected as components.
 
 For contract generation:
 
+- translate only resources whose implementation mode is `contract`;
 - create schema version `1.0` resource requirements and solution files;
 - declare every enabled component in both inputs;
 - give every resource a unique `id`, supported `kind`, and non-empty
@@ -114,6 +127,8 @@ For contract generation:
 
 For direct composition:
 
+- implement the provider-qualified Azure resource types and controls declared
+  by direct resources in the implementation contract;
 - default-export `defineDeployment(async (deployment) => { ... })`;
 - make each provisioning entrypoint export a non-empty `outputBicep` array of
   `{ path, contents }`;
@@ -166,5 +181,7 @@ Before reporting completion, verify that:
 - generated TypeScript and provisioning entrypoints typecheck;
 - the dry run completes and lists the expected ordered steps;
 - no secret or local azd state was added to version control;
+- no internal architecture reference metadata leaked into generated files or
+  the completion report;
 - any operation not executed because it would change Azure is called out
   clearly with the exact next command.

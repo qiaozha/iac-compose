@@ -4,6 +4,12 @@ Use this workflow when the requested architecture fits the generator's
 supported resource kinds and the user wants a component-oriented deployment
 package.
 
+When the plan arrives as `implementation-contract.json`, translate its
+components and resources into the two generator inputs below. The
+implementation contract is the intent handoff, not a third generator input:
+do not copy its internal reasoning fields or introduce architecture-reference
+provenance into the generated contracts.
+
 ## Inputs
 
 Generation consumes two schema version `1.0` JSON files:

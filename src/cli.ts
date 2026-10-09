@@ -5,10 +5,12 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   createDeployment,
+  fetchAzureArchitectureCatalog,
   generateDeploymentCode,
   iacComposeAzdTemplate,
   loadResourceRequirements,
   validateResourceRequirements,
+  writeAzureArchitectureCatalog,
   type DeploymentProgram,
 } from "./index.js";
 import { importTypeScript } from "./typescript-loader.js";
@@ -49,10 +51,35 @@ interface DownOptions {
   purge: boolean;
 }
 
-type CliOptions = RunOptions | GenerateOptions | ValidateOptions | DownOptions;
+interface ArchitectureCatalogOptions {
+  command: "architecture-catalog";
+  outputFile: string;
+  ref: string;
+  concurrency: number;
+}
+
+type CliOptions =
+  | RunOptions
+  | GenerateOptions
+  | ValidateOptions
+  | DownOptions
+  | ArchitectureCatalogOptions;
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
+  if (options.command === "architecture-catalog") {
+    const catalog = await fetchAzureArchitectureCatalog({
+      ref: options.ref,
+      concurrency: options.concurrency,
+      token: process.env.GITHUB_TOKEN,
+    });
+    await writeAzureArchitectureCatalog(catalog, options.outputFile);
+    console.log(
+      `[iac-compose] extracted ${catalog.counts.architectures} Azure Architecture Center examples at ${catalog.source.commit}.`,
+    );
+    console.log(`[iac-compose] wrote ${resolve(options.outputFile)}`);
+    return;
+  }
   if (options.command === "generate") {
     const result = await generateDeploymentCode({
       resourcesFile: options.resourcesFile,
@@ -157,10 +184,49 @@ async function main(): Promise<void> {
 }
 
 function parseArgs(args: readonly string[]): CliOptions {
+  if (args[0] === "architecture-catalog") {
+    return parseArchitectureCatalogArgs(args.slice(1));
+  }
   if (args[0] === "generate") return parseGenerateArgs(args.slice(1));
   if (args[0] === "validate") return parseValidateArgs(args.slice(1));
   if (args[0] === "down") return parseDownArgs(args.slice(1));
   return parseRunArgs(args[0] === "run" ? args.slice(1) : args);
+}
+
+function parseArchitectureCatalogArgs(
+  args: readonly string[],
+): ArchitectureCatalogOptions {
+  let outputFile = "architecture-catalog.json";
+  let ref = "main";
+  let concurrency = 12;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "-o" || argument === "--output") {
+      outputFile = requiredValue(args, ++index, argument);
+    } else if (argument === "--ref") {
+      ref = requiredValue(args, ++index, argument);
+    } else if (argument === "--concurrency") {
+      const value = Number(requiredValue(args, ++index, argument));
+      if (!Number.isInteger(value) || value < 1) {
+        throw new Error("--concurrency requires a positive integer.");
+      }
+      concurrency = value;
+    } else if (argument === "-h" || argument === "--help") {
+      printArchitectureCatalogHelp();
+      process.exit(0);
+    } else if (argument?.startsWith("-")) {
+      throw new Error(`Unknown option: ${argument}`);
+    } else {
+      throw new Error(`Unexpected argument: ${argument}`);
+    }
+  }
+  return {
+    command: "architecture-catalog",
+    outputFile: resolve(outputFile),
+    ref,
+    concurrency,
+  };
 }
 
 function parseDownArgs(args: readonly string[]): DownOptions {
@@ -408,6 +474,7 @@ function readObjectProperty(
 function printHelp(): void {
   console.log(`Usage:
   iac-compose <deployment.ts> [options]
+  iac-compose architecture-catalog [options]
   iac-compose generate --resources <requirements.json> --solution <solution.json> [options]
   iac-compose validate --resources <requirements.json> [options]
   iac-compose down <generated-project-directory> --environment <name> --force [options]
@@ -418,6 +485,19 @@ Composition options:
   -c, --component <name>    Run one deployment-defined component
       --dry-run             Print ordered steps without side effects
   -h, --help                Show this help`);
+}
+
+function printArchitectureCatalogHelp(): void {
+  console.log(`Usage: iac-compose architecture-catalog [options]
+
+Options:
+  -o, --output <file>        Catalog JSON file (default: architecture-catalog.json)
+      --ref <git-ref>        MicrosoftDocs source ref (default: main)
+      --concurrency <count>  Concurrent source requests (default: 12)
+  -h, --help                 Show this help
+
+Set GITHUB_TOKEN to increase GitHub API rate limits. The catalog records the
+resolved source commit and Microsoft documentation and code licenses.`);
 }
 
 function printDownHelp(): void {

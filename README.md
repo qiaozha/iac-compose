@@ -33,8 +33,8 @@ This repository includes two complementary Agent Skills:
 
 - [azure-infrastructure-intent](.github/skills/azure-infrastructure-intent/SKILL.md)
   infers resource requirements from a sparse workload request or application
-  repository, applies Azure Well-Architected guidance, and selects a
-  cost-conscious architecture.
+  repository, applies Azure Well-Architected guidance, selects a cost-conscious
+  architecture, and emits a customer-specific implementation contract.
 - [iac-compose](.github/skills/iac-compose/SKILL.md) turns the selected
   architecture into contract-generated or directly authored TypeScript
   infrastructure with ordered lifecycle, validation, and deployment safety.
@@ -51,13 +51,69 @@ gh skill install qiaozha/iac-compose iac-compose --allow-hidden-dirs
 
 By default, GitHub CLI installs the skill for Copilot at project scope.
 
+### Implementation contract
+
+The intent skill writes `implementation-contract.json` as the stable,
+customer-specific handoff to iac-compose. The current schema version is `1.0`.
+The contract describes components, resources, authoring mode, configuration,
+controls, outputs, dependencies, identity access, parameters, assumptions,
+Well-Architected decisions, tradeoffs, validation gates, and unresolved
+blockers.
+
+Read the complete
+[implementation contract schema reference](docs/implementation-contract.md),
+the machine-readable
+[JSON Schema](.github/skills/azure-infrastructure-intent/references/implementation-contract.schema.json),
+and the validated
+[contract-driven](docs/examples/implementation-contract.contract.json) and
+[direct-authoring](docs/examples/implementation-contract.direct.json)
+examples.
+
+### Azure Architecture Center catalog
+
+The intent skill includes a pinned, machine-readable
+[Architecture Center catalog](.github/skills/azure-infrastructure-intent/references/architecture-catalog.json).
+The current snapshot extracts all 194 `YamlMime:Architecture` examples from the
+official MicrosoftDocs source, including categories, products, pinned content
+paths, 25 explicitly linked implementation URLs across 17 examples, and a
+preliminary iac-compose authoring route.
+
+Refresh it from the official repository:
+
+```bash
+npm run architecture:sync
+```
+
+The extractor resolves `main` to a commit, rejects incomplete GitHub tree
+responses, and records the CC BY 4.0 documentation and MIT code licenses. Use
+`GITHUB_TOKEN` only when a higher API rate limit is needed. The command can
+also be called directly with another ref or destination:
+
+```bash
+iac-compose architecture-catalog \
+  --ref main \
+  --output ./architecture-catalog.json
+```
+
+Catalog product identifiers are internal discovery metadata, not a deployable
+resource graph. The intent skill privately matches workload capabilities to
+proven patterns, reads the full pinned article, and emits only a
+customer-specific `implementation-contract.json`. Catalog titles, IDs, URLs,
+source commits, and sample links never enter that contract or generated
+infrastructure. Explicitly requested provenance is reported separately. See the
+[internal matching workflow](.github/skills/azure-infrastructure-intent/references/architecture-center-workflow.md),
+the [implementation contract](docs/implementation-contract.md),
+and
+[iac-compose handoff workflow](.github/skills/iac-compose/references/implementation-contract-handoff.md).
+
 ### Evaluate the skills with Vally
 
 The behavioral suites under [evals/](evals/) use
 [Vally](https://aka.ms/vally) to measure skill routing, sparse Azure intent
 recognition, Well-Architected service selection, contract generation, direct
-TypeScript authoring, lifecycle ordering, cloud-operation safety, and the
-end-to-end handoff from inferred intent to final `iac-compose` infrastructure.
+TypeScript authoring, lifecycle ordering, cloud-operation safety, private
+reference-pattern matching, implementation-contract privacy, and the end-to-end
+handoff from inferred intent to final `iac-compose` infrastructure.
 
 Vally requires Node.js 22.12 or newer and a GitHub account with an active
 Copilot subscription. Validate the skill definitions and eval specifications

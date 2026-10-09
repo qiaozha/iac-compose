@@ -14,6 +14,17 @@ import { getAzdProject, iacComposeAzdTemplate } from "./azd.js";
 import { importTypeScript } from "./typescript-loader.js";
 
 export {
+  fetchAzureArchitectureCatalog,
+  extractOfficialImplementationUrls,
+  parseAzureArchitectureSource,
+  writeAzureArchitectureCatalog,
+  type ArchitectureImplementationMode,
+  type ArchitectureImplementationRoute,
+  type AzureArchitectureCatalog,
+  type AzureArchitectureCatalogEntry,
+  type FetchArchitectureCatalogOptions,
+} from "./architecture-catalog.js";
+export {
   AzdProject,
   createAzdProject,
   iacComposeAzdTemplate,

@@ -16,6 +16,28 @@ import {
   resolveOutputBindings,
   teamsEnvironmentName,
 } from "../src/runtime/resources/index.js";
+import { validateResourceContract } from "../src/shared/contracts/resources/validation.js";
+
+test("accepts every documented generated resource kind", () => {
+  assert.doesNotThrow(() =>
+    validateResourceContract({
+      schemaVersion: "1.0",
+      solution: { name: "catalog-example", enabledComponents: ["app"] },
+      resources: [
+        {
+          id: "registry",
+          kind: "container-registry",
+          requiredBy: ["app"],
+        },
+        {
+          id: "model",
+          kind: "model-deployment",
+          requiredBy: ["app"],
+        },
+      ],
+    }),
+  );
+});
 
 test("updates hosted-agent configuration through App Configuration data plane", () => {
   assert.deepEqual(

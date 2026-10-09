@@ -17,6 +17,7 @@
     "vendor"
   ],
   "scripts": {
+    "architecture:sync": "tsx src/cli.ts architecture-catalog --output .github/skills/azure-infrastructure-intent/references/architecture-catalog.json",
     "build": "tsc -p tsconfig.json",
     "iac-compose": "tsx src/cli.ts",
     "pretest": "npm run build",
@@ -30,7 +31,8 @@
     "eval:iac-compose": "vally eval --suite iac-compose --require-pass"
   },
   "dependencies": {
-    "tsx": "^4.21.0"
+    "tsx": "^4.21.0",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@microsoft/vally-cli": "0.16.0",

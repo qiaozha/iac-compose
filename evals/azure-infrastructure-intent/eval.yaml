@@ -1,5 +1,5 @@
 name: azure-infrastructure-intent
-description: Evaluates sparse workload recognition, service selection, restraint, Well-Architected reasoning, and handoff to final iac-compose infrastructure.
+description: Evaluates sparse workload recognition, private architecture-pattern matching, implementation contracts, restraint, Well-Architected reasoning, and handoff to final iac-compose infrastructure.
 version: "1.0"
 type: capability
 
@@ -32,26 +32,36 @@ stimuli:
     prompt: |
       We need this ordinary business application hosted on Azure. We
       intentionally have not chosen any Azure resources. Inspect the repository
-      and create only architecture-plan.json; do not implement infrastructure,
-      install packages, run cloud commands, or deploy anything. Do not ask about
-      routine defaults.
+      and create only implementation-contract.json; do not implement
+      infrastructure, install packages, run cloud commands, or deploy anything.
+      Do not ask about routine defaults.
 
       The JSON must contain these top-level fields:
+      - schemaVersion: "1.0"
+      - solution: an object with a stable name
       - profile: a workload profile string
+      - authoringMode: contract, direct, or hybrid
       - components: an array
-      - resources: an array whose entries include service and reason
+      - resources: an array whose entries include service, capability,
+        requiredBy, ownership, implementation, configuration, controls,
+        produces, consumes, and access
+      - parameters: an array
       - assumptions: an array whose entries include decision and confidence
       - dependencies: an array
+      - deploymentOrder: an array
       - wellArchitected: an object with reliability, security, costOptimization,
         operationalExcellence, and performanceEfficiency arrays
       - tradeoffs: an array
+      - validation: an array
+      - unresolved: an array
     rubric:
-      - The plan recognizes a request-driven container API and selects Azure App Service rather than AKS.
-      - The plan identifies Blob Storage for durable uploads, preserves Cosmos DB for document data, and includes Azure Container Registry.
-      - The plan selects the standard workload profile and includes managed identity, least-privilege RBAC, Application Insights, and Log Analytics.
-      - Every resource is tied to observed application evidence or a stated profile default; it does not add APIM, Front Door, Firewall, Kubernetes, or private networking without a need.
+      - The contract recognizes a request-driven container API and selects Azure App Service rather than AKS.
+      - The contract identifies Blob Storage for durable uploads, preserves Cosmos DB for document data, and includes Azure Container Registry.
+      - The contract selects the standard workload profile and includes managed identity, least-privilege RBAC, Application Insights, and Log Analytics.
+      - Every resource is tied to observed application evidence or a stated profile default and has an actionable contract kind, outputs, consumers, controls, and ownership; it does not add APIM, Front Door, Firewall, Kubernetes, or private networking without a need.
       - Assumptions use explicit, evidenced, defaulted, or unresolved confidence and the Well-Architected review covers all five pillars with meaningful content.
-      - The agent follows the plan-only and no-cloud-side-effects constraints without asking routine Azure product questions.
+      - "Internal architecture matching remains invisible: neither the contract nor the customer-facing response mentions a catalog, Architecture Center, reference example, source URL, source commit, or sample implementation."
+      - The agent follows the contract-only and no-cloud-side-effects constraints without asking routine Azure product questions.
     graders:
       - type: completed
       - type: skill-invocation
@@ -62,7 +72,7 @@ stimuli:
             - iac-compose
       - type: file-exists
         config:
-          path: architecture-plan.json
+          path: implementation-contract.json
       - type: run-command
         config:
           command: node
@@ -71,27 +81,33 @@ stimuli:
             - -e
             - |
               import { readFileSync } from "node:fs";
-              const plan = JSON.parse(readFileSync("architecture-plan.json", "utf8"));
-              const arrays = ["components", "resources", "assumptions", "dependencies", "tradeoffs"];
-              if (typeof plan.profile !== "string" || !plan.profile) process.exit(1);
-              if (arrays.some((key) => !Array.isArray(plan[key]))) process.exit(1);
+              const source = readFileSync("implementation-contract.json", "utf8");
+              const contract = JSON.parse(source);
+              const arrays = ["components", "resources", "parameters", "assumptions", "dependencies", "deploymentOrder", "tradeoffs", "validation", "unresolved"];
+              if (contract.schemaVersion !== "1.0" || typeof contract.solution?.name !== "string") process.exit(1);
+              if (contract.profile !== "standard" || contract.authoringMode !== "contract") process.exit(1);
+              if (arrays.some((key) => !Array.isArray(contract[key]))) process.exit(1);
+              if (contract.resources.some((resource) => !resource.id || !resource.service || !resource.capability || !Array.isArray(resource.requiredBy) || !resource.ownership || !resource.implementation?.mode || !Array.isArray(resource.controls) || !Array.isArray(resource.produces) || !Array.isArray(resource.consumes) || !Array.isArray(resource.access))) process.exit(1);
+              const kinds = new Set(contract.resources.map((resource) => resource.implementation?.kind));
+              for (const kind of ["container-host", "container-registry", "document-database", "object-storage", "application-monitoring"]) if (!kinds.has(kind)) process.exit(1);
               const pillars = ["reliability", "security", "costOptimization", "operationalExcellence", "performanceEfficiency"];
-              if (!plan.wellArchitected || pillars.some((key) => !Array.isArray(plan.wellArchitected[key]))) process.exit(1);
+              if (!contract.wellArchitected || pillars.some((key) => !Array.isArray(contract.wellArchitected[key]))) process.exit(1);
+              if (/(Architecture Center|referenceArchitecture|sourceCommit|officialImplementationUrls|MicrosoftDocs|Azure-Samples)/i.test(source)) process.exit(1);
       - type: file-matches
         config:
-          path: architecture-plan.json
+          path: implementation-contract.json
           pattern: '(?i)"profile"\s*:\s*"standard"'
       - type: file-matches
         config:
-          path: architecture-plan.json
+          path: implementation-contract.json
           pattern: '(?i)App Service'
       - type: file-matches
         config:
-          path: architecture-plan.json
+          path: implementation-contract.json
           pattern: '(?i)(Blob Storage|Storage Account)'
       - type: file-matches
         config:
-          path: architecture-plan.json
+          path: implementation-contract.json
           pattern: '(?i)Cosmos DB'
       - type: tool-calls
         config:
@@ -222,13 +238,18 @@ stimuli:
       the application, infer the smallest appropriate architecture, and carry
       the decision through to the final iac-compose TypeScript infrastructure.
 
-      Create deployment/deploy.ts and deployment/infra.ts. Use direct authoring
-      when the inferred service is not supported by the iac-compose resource
-      contract. The deployment program must use defineDeployment and
-      deployment.provision. The provisioning entrypoint must export a non-empty
-      outputBicep array containing main.bicep and main.bicepparam and expose the
-      deployed site's resource ID, name, and hostname as outputs. Keep region,
-      environment, and collision-sensitive naming configurable.
+      Create implementation-contract.json, deployment/deploy.ts, and
+      deployment/infra.ts. Use direct authoring when the inferred service is not
+      supported by the iac-compose resource contract. The implementation
+      contract must use schema version 1.0, select the sandbox profile and
+      direct authoring, and include components, resources, parameters,
+      dependencies, deployment order, assumptions, all five Well-Architected
+      pillars, tradeoffs, validation, and unresolved decisions. The deployment
+      program must use defineDeployment and deployment.provision. The
+      provisioning entrypoint must export a non-empty outputBicep array
+      containing main.bicep and main.bicepparam and expose the deployed site's
+      resource ID, name, and hostname as outputs. Keep region, environment, and
+      collision-sensitive naming configurable.
 
       Do not create an unsupported logical resource kind, install packages, run
       Azure commands, grant roles outside authored IaC, or deploy anything.
@@ -236,6 +257,7 @@ stimuli:
       - The trajectory invokes azure-infrastructure-intent before iac-compose, making a clear handoff from sparse workload understanding to infrastructure authoring.
       - Repository evidence is recognized as a client-only static Vite site, so the selected architecture is a sandbox Azure Static Web App with no database, registry, Kubernetes, API Management, Front Door, Firewall, or private network.
       - Because Static Web Apps is not in the supported contract vocabulary, the final result uses direct TypeScript iac-compose authoring rather than inventing a resource kind.
+      - implementation-contract.json is a complete direct-authoring handoff for Microsoft.Web/staticSites with actionable controls, outputs, parameters, validation, and no internal catalog or reference-example provenance.
       - deploy.ts uses defineDeployment and deployment.provision with an explicit generated layer, while infra.ts exports non-empty main.bicep and main.bicepparam artifacts for Microsoft.Web/staticSites.
       - The infrastructure enforces managed HTTPS, uses configurable or deterministic naming and location, and outputs only nonsecret resource identifiers and the hostname.
       - No package installation, Azure execution, role grant outside IaC, or deployment occurs.
@@ -248,6 +270,9 @@ stimuli:
             - iac-compose
       - type: file-exists
         config:
+          path: implementation-contract.json
+      - type: file-exists
+        config:
           path: deployment/deploy.ts
       - type: file-exists
         config:
@@ -255,6 +280,10 @@ stimuli:
       - type: file-not-exists
         config:
           path: config/resource-requirements.json
+      - type: file-matches
+        config:
+          path: implementation-contract.json
+          pattern: '(?i)Microsoft\.Web/staticSites'
       - type: file-matches
         config:
           path: deployment/deploy.ts
@@ -275,6 +304,24 @@ stimuli:
         config:
           path: deployment/infra.ts
           pattern: 'main\.bicepparam'
+      - type: run-command
+        config:
+          command: node
+          args:
+            - --input-type=module
+            - -e
+            - |
+              import { readFileSync } from "node:fs";
+              const source = readFileSync("implementation-contract.json", "utf8");
+              const contract = JSON.parse(source);
+              if (contract.schemaVersion !== "1.0" || contract.profile !== "sandbox" || contract.authoringMode !== "direct") process.exit(1);
+              const arrays = ["components", "resources", "parameters", "dependencies", "deploymentOrder", "assumptions", "tradeoffs", "validation", "unresolved"];
+              if (arrays.some((key) => !Array.isArray(contract[key]))) process.exit(1);
+              const resource = contract.resources.find((candidate) => candidate.service?.includes("Static Web Apps"));
+              if (resource?.implementation?.mode !== "direct" || !resource.implementation.azureResourceTypes?.includes("Microsoft.Web/staticSites")) process.exit(1);
+              const pillars = ["reliability", "security", "costOptimization", "operationalExcellence", "performanceEfficiency"];
+              if (!contract.wellArchitected || pillars.some((key) => !Array.isArray(contract.wellArchitected[key]))) process.exit(1);
+              if (/(Architecture Center|reference architecture|referenceArchitecture|architectureCenter|sourceCommit|officialImplementationUrls|MicrosoftDocs|Azure-Samples)/i.test(source)) process.exit(1);
       - type: tool-calls
         config:
           disallowed:
@@ -318,6 +365,85 @@ stimuli:
           scoring: binary
           evidence:
             - trajectory
+
+  - name: infer-grounded-employee-chat-contract
+    tags:
+      priority: p1
+      behavior: hidden-architecture-match
+    prompt: |
+      We want to try an internal assistant for our employees. People should
+      sign in with their company account, ask conversational questions about
+      our private documents, and receive answers grounded by keyword and vector
+      retrieval over those documents. We have a small Node.js prototype with a
+      server component, expect fewer than 20 concurrent users, and only need a
+      low-cost proof of concept in one region. We have not selected any Azure
+      services.
+
+      Infer the smallest complete Azure design and create only
+      implementation-contract.json using the skill's implementation contract
+      format. Explain choices from the workload evidence and explicit
+      assumptions. Do not implement infrastructure, install packages, run
+      Azure commands, or deploy.
+    rubric:
+      - The workload is inferred as an authenticated employee chat application with server-side orchestration and retrieval grounding, without requiring the customer to know an Azure architecture name.
+      - The implementation contract includes App Service with Entra authentication, a Foundry project and Agent Service, a model deployment, Azure AI Search, managed identity and least-privilege access, Application Insights, and Azure Monitor.
+      - The contract selects sandbox or an explicit POC profile, uses direct authoring for the complete unsupported graph or a clearly justified hybrid, and retains single-region nonproduction limitations instead of adding Front Door, WAF, private networking, or multi-region resources.
+      - Components, direct ARM resource types or supported kinds, configuration, controls, outputs, consumers, access edges, parameters, dependency order, assumptions, and validation gates are actionable for iac-compose.
+      - "Internal matching is invisible in both the contract and response: there is no Architecture Center, reference architecture, example title or ID, catalog, source URL or commit, or official implementation link."
+      - All five Well-Architected pillars and tradeoffs are present, with no cloud or package side effect.
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          required:
+            - azure-infrastructure-intent
+          disallowed:
+            - iac-compose
+      - type: file-exists
+        config:
+          path: implementation-contract.json
+      - type: run-command
+        config:
+          command: node
+          args:
+            - --input-type=module
+            - -e
+            - |
+              import { readFileSync } from "node:fs";
+              const source = readFileSync("implementation-contract.json", "utf8");
+              const contract = JSON.parse(source);
+              if (contract.schemaVersion !== "1.0" || typeof contract.solution?.name !== "string") process.exit(1);
+              if (!["sandbox", "standard"].includes(contract.profile)) process.exit(1);
+              if (!["direct", "hybrid"].includes(contract.authoringMode)) process.exit(1);
+              const arrays = ["components", "resources", "parameters", "dependencies", "deploymentOrder", "assumptions", "tradeoffs", "validation", "unresolved"];
+              if (arrays.some((key) => !Array.isArray(contract[key]))) process.exit(1);
+              if (contract.resources.some((resource) => !resource.id || !resource.service || !resource.capability || !Array.isArray(resource.requiredBy) || !resource.implementation?.mode || !Array.isArray(resource.controls) || !Array.isArray(resource.produces) || !Array.isArray(resource.consumes) || !Array.isArray(resource.access))) process.exit(1);
+              const pillars = ["reliability", "security", "costOptimization", "operationalExcellence", "performanceEfficiency"];
+              if (!contract.wellArchitected || pillars.some((key) => !Array.isArray(contract.wellArchitected[key]))) process.exit(1);
+              if (/(Architecture Center|reference architecture|basic Microsoft Foundry|basic-microsoft-foundry-chat|referenceArchitecture|architectureCenter|sourceCommit|officialImplementationUrls|MicrosoftDocs|Azure-Samples)/i.test(source)) process.exit(1);
+      - type: file-matches
+        config:
+          path: implementation-contract.json
+          pattern: '(?i)(Azure AI Search|AI Search)'
+      - type: file-matches
+        config:
+          path: implementation-contract.json
+          pattern: '(?i)(Foundry Agent Service|Agent Service)'
+      - type: file-matches
+        config:
+          path: implementation-contract.json
+          pattern: '(?i)(App Service)'
+      - type: tool-calls
+        config:
+          disallowed:
+            - name: '^(bash|shell|run_command|runInTerminal)$'
+              command: '(?:^|[;&|]\s*|\n\s*)(?:az|azd)(?:\s|$)'
+      - type: prompt
+        config:
+          scoring: binary
+          evidence:
+            - trajectory
+            - repo
 
 scoring:
   threshold: 1.0
