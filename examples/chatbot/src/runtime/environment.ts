@@ -9,7 +9,7 @@ import {
   stringEnvironment,
   type Deployment,
   type EnvironmentValues,
-} from "iac-compose";
+} from "iac-composer";
 import { environmentRoot, generatedRoot } from "./paths.js";
 
 export { optionalEnv, requiredEnv, type EnvironmentValues };
@@ -73,7 +73,7 @@ function environmentProject(deployment: Deployment, environment?: string) {
     environment,
     mergeManifest: true,
     manifest: {
-      name: "iac-compose-chatbot",
+      name: "iac-composer-chatbot",
       requiredVersions: { azd: ">= 1.30.0" },
     },
   });

@@ -1,9 +1,9 @@
+import { deployHostedAgentService } from "../../runtime/services/hosted-agent.js";
 import { resolve } from "node:path";
 
 import {
-  deployHostedAgentService,
   type Deployment,
-} from "iac-compose";
+} from "iac-composer";
 import {
   persistEnvironment,
   requiredEnv,

@@ -8,7 +8,7 @@ import {
   stringEnvironment,
   type Deployment,
   type EnvironmentValues,
-} from "iac-compose";
+} from "iac-composer";
 import { environmentRoot, generatedRoot } from "./paths.js";
 
 export { requiredEnv, type EnvironmentValues };
@@ -62,7 +62,7 @@ function environmentProject(deployment: Deployment, environment?: string) {
     environment,
     mergeManifest: true,
     manifest: {
-      name: "iac-compose-contoso-support",
+      name: "iac-composer-contoso-support",
       requiredVersions: { azd: ">= 1.30.0" },
     },
   });

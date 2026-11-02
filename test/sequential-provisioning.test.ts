@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { createDeployment } from "../src/index.js";
 
 test("dry run generates layered Bicep in one azd project", async () => {
-  const root = await mkdtemp(join(tmpdir(), "iac-compose-components-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-composer-components-"));
   const outputRoot = resolve(root, ".generated");
   const messages: string[] = [];
   const deployment = createDeployment({
@@ -50,6 +50,9 @@ test("dry run generates layered Bicep in one azd project", async () => {
     await assert.rejects(access(resolve(outputDirectory, ".azure")));
     await assert.rejects(access(resolve(outputDirectory, "stale.bicep")));
     await assert.rejects(
+      access(resolve(outputDirectory, ".iac-composer-generated.json")),
+    );
+    await assert.rejects(
       access(resolve(outputDirectory, ".iac-compose-generated.json")),
     );
   }
@@ -64,7 +67,7 @@ test("dry run generates layered Bicep in one azd project", async () => {
   ];
   assert.deepEqual(
     JSON.parse(
-      await readFile(resolve(outputRoot, ".iac-compose-generated.json"), "utf8"),
+      await readFile(resolve(outputRoot, ".iac-composer-generated.json"), "utf8"),
     ),
     generatedFiles,
   );
@@ -72,7 +75,7 @@ test("dry run generates layered Bicep in one azd project", async () => {
     JSON.parse(await readFile(resolve(outputRoot, "azure.yaml"), "utf8")),
     {
       name: "dev-chatbot",
-      metadata: { template: "iac-compose@1.0.0" },
+      metadata: { template: "iac-composer@1.0.0" },
       requiredVersions: { azd: ">= 1.30.0" },
       infra: {
         provider: "bicep",
@@ -98,12 +101,12 @@ test("dry run generates layered Bicep in one azd project", async () => {
     access(resolve(outputRoot, ".iac-compose-project.json")),
   );
   assert.deepEqual(
-    messages.filter((message) => message.startsWith("[iac-compose] $ azd provision")),
+    messages.filter((message) => message.startsWith("[iac-composer] $ azd provision")),
     [
-      "[iac-compose] $ azd provision shared --environment dev --no-prompt",
-      "[iac-compose] $ azd provision agent --environment dev --no-prompt",
-      "[iac-compose] $ azd provision agent --environment dev --no-prompt",
-      "[iac-compose] $ azd provision frontend --environment dev --no-prompt",
+      "[iac-composer] $ azd provision shared --environment dev --no-prompt",
+      "[iac-composer] $ azd provision agent --environment dev --no-prompt",
+      "[iac-composer] $ azd provision agent --environment dev --no-prompt",
+      "[iac-composer] $ azd provision frontend --environment dev --no-prompt",
     ],
   );
 
@@ -134,7 +137,7 @@ test("dry run generates layered Bicep in one azd project", async () => {
   );
   assert.deepEqual(
     JSON.parse(
-      await readFile(resolve(outputRoot, ".iac-compose-generated.json"), "utf8"),
+      await readFile(resolve(outputRoot, ".iac-composer-generated.json"), "utf8"),
     ),
     generatedFiles,
   );

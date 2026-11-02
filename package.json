@@ -1,10 +1,10 @@
 {
-  "name": "iac-compose",
+  "name": "iac-composer",
   "version": "0.1.0",
   "description": "Compose TypeScript or JavaScript infrastructure and application deployment through azd in authored order.",
   "type": "module",
   "bin": {
-    "iac-compose": "dist/cli.js"
+    "iac-composer": "dist/cli.js"
   },
   "exports": {
     ".": {
@@ -13,29 +13,21 @@
     }
   },
   "files": [
-    "dist",
-    "vendor"
+    "dist"
   ],
   "scripts": {
-    "architecture:sync": "tsx src/cli.ts architecture-catalog --output .github/skills/azure-infrastructure-intent/references/architecture-catalog.json",
     "build": "tsc -p tsconfig.json",
-    "iac-compose": "tsx src/cli.ts",
+    "iac-composer": "tsx src/cli.ts",
     "pretest": "npm run build",
     "test": "tsx --test test/*.test.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "eval:lint": "vally lint .github/skills --eval-spec evals --strict",
-    "eval:end-to-end": "vally eval --eval-spec evals/azure-infrastructure-intent/eval.yaml --tag behavior=end-to-end --require-pass",
-    "eval:routing": "vally eval --suite skill-routing --require-pass",
-    "eval:skills": "vally eval --suite skills --require-pass",
-    "eval:intent": "vally eval --suite azure-infrastructure-intent --require-pass",
-    "eval:iac-compose": "vally eval --suite iac-compose --require-pass"
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "tsx": "^4.21.0",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
-    "@microsoft/vally-cli": "0.16.0",
+    "ajv": "8.17.1",
     "@types/node": "^24.0.0",
     "typescript": "^6.0.0"
   },

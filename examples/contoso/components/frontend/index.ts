@@ -1,3 +1,4 @@
+import { provisionTeamsApplication } from "../../runtime/services/teams.js";
 import { resolve } from "node:path";
 
 import {
@@ -5,10 +6,9 @@ import {
   ensureAppServiceIngress,
   ensureAppServicePrivateEndpoint,
   prepareAppServiceContainer,
-  provisionTeamsApplication,
   type Deployment,
   waitForAppServiceReady,
-} from "iac-compose";
+} from "iac-composer";
 import {
   persistEnvironment,
   requiredEnv,
