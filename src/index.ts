@@ -66,11 +66,7 @@ export {
   stringEnvironment,
   type EnvironmentValues,
 } from "./environment.js";
-export {
-  ensureDeploymentPrincipalRoles,
-  type DeploymentRoleRequirement,
-  type EnsureDeploymentPrincipalRolesOptions,
-} from "./runtime/principal.js";
+
 export interface Command {
   command: string;
   args?: readonly string[];

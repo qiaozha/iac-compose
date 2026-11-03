@@ -1,64 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { test } from "node:test";
 
 import { createDeployment, Deployment, type Command } from "iac-composer";
 import {
-  appConfigurationKeySetArgs,
-  createHostedAgentManifest,
   enableWorkflowDeployment,
-  parseHostedAgentVersion,
   prepareAuthorizedConnection,
   validateWorkflowParameters,
 } from "../src/runtime/services/index.js";
-
-test("updates hosted-agent configuration through App Configuration data plane", () => {
-  assert.deepEqual(
-    appConfigurationKeySetArgs(
-      "subscription-id",
-      "configuration-store",
-      "AI_FOUNDRY_AGENT_VERSION",
-      "2",
-    ),
-    [
-      "appconfig",
-      "kv",
-      "set",
-      "--subscription",
-      "subscription-id",
-      "--name",
-      "configuration-store",
-      "--auth-mode",
-      "login",
-      "--key",
-      "AI_FOUNDRY_AGENT_VERSION",
-      "--value",
-      "2",
-      "--yes",
-      "--output",
-      "none",
-    ],
-  );
-});
-
-test("validates hosted agent manifests and active versions", () => {
-  const manifest = createHostedAgentManifest({
-    service: "agent",
-    sourceDirectory: "/workspace/agent",
-    name: "support-agent",
-    environment: {},
-  });
-  assert.equal((manifest.services as any).agent.name, "support-agent");
-  assert.deepEqual(
-    parseHostedAgentVersion(
-      JSON.stringify({ name: "support-agent", version: "2", status: "active" }),
-    ),
-    { name: "support-agent", version: "2", status: "active" },
-  );
-  assert.throws(() => parseHostedAgentVersion("{}"), /invalid agent version/);
-});
 
 test("direct workflow validation rejects placeholders without resource contracts", async () => {
   const parameters = {

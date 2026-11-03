@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { resolve } from "node:path";
-import { readFile, readdir } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import * as runtime from "../src/index.js";
@@ -12,8 +12,15 @@ const cli = resolve("dist/cli.js");
 test("exports execution primitives without planning or source generation", () => {
   assert.equal(typeof runtime.defineDeployment, "function");
   assert.equal(typeof runtime.createDeployment, "function");
-  assert.equal(typeof runtime.ensureDeploymentPrincipalRoles, "function");
   for (const name of [
+    "ensureDeploymentPrincipalRoles",
+    "getActiveHostedAgentVersion",
+    "deployHostedAgentService",
+    "getApiConnectionStatus",
+    "requireApiConnectionAuthorization",
+    "setAppConfigurationKeyValues",
+    "parseHostedAgentVersion",
+    "waitForHostedAgentVersion",
     "generateDeploymentCode",
     "loadResourceRequirements",
     "renderResourceRequirements",
@@ -24,9 +31,7 @@ test("exports execution primitives without planning or source generation", () =>
     "prepareResourceRequirements",
     "resolveOutputBindings",
     "createHostedAgentManifest",
-    "deployHostedAgentService",
     "enableWorkflowDeployment",
-    "parseHostedAgentVersion",
     "prepareAuthorizedConnection",
     "provisionTeamsApplication",
     "teamsEnvironmentName",
@@ -44,10 +49,29 @@ test("runtime source and declarations contain no resource contracts or contract 
       const source = await readFile(resolve(directory, entry), "utf8");
       assert.doesNotMatch(
         source,
-        /ResourceContract|DeployResourceComponentOptions|deployResourceComponent|prepareResourceRequirements|resolveOutputBindings|shared\/contracts|runtime\/resources|deployHostedAgentService|provisionTeamsApplication|enableWorkflowDeployment/,
+        /ResourceContract|DeployResourceComponentOptions|deployResourceComponent|prepareResourceRequirements|resolveOutputBindings|shared\/contracts|runtime\/resources|runtime\/providers|provisionTeamsApplication|enableWorkflowDeployment|HostedAgentService|ensureDeploymentPrincipalRoles|getApiConnectionStatus/,
         entry,
       );
     }
+  }
+});
+
+test("runtime package has no provider source, build output or public subpaths", async () => {
+  const manifest = JSON.parse(await readFile("package.json", "utf8"));
+  assert.deepEqual(Object.keys(manifest.exports), ["."]);
+  for (const directory of ["src/runtime/providers", "dist/runtime/providers"]) {
+    await assert.rejects(access(directory), { code: "ENOENT" });
+  }
+  for (const name of [
+    "microsoft-cognitiveservices",
+    "microsoft-web",
+    "microsoft-authorization",
+    "microsoft-appconfiguration",
+  ]) {
+    await assert.rejects(
+      import(`iac-composer/providers/${name}`),
+      { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" },
+    );
   }
 });
 

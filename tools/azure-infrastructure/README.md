@@ -13,16 +13,104 @@ there is no implicit AI inference in a `generate` command. Complete plans skip
 intent recognition. Unsupported contract resources use direct IaC authoring.
 
 Generated deployment programs depend only on [iac-composer](../../README.md)
-and the Azure provisioning SDKs. Service-specific deployment helpers are emitted
-as customer-owned TypeScript under `runtime/services/`.
+and the Azure provisioning SDKs. Service lifecycles are emitted as customer-owned
+TypeScript under `runtime/services/`, including hosted-agent deployment, API
+connection authorization, configuration writes, and selected authorization
+bootstrap operations. Each generated component imports the helper files it
+uses and supplies its provisioning layer and runtime configuration.
+Hosted-agent deployment returns its endpoint, identity, name, and version.
+Applications that include a configuration store persist agent values in a
+separate application deployment step.
 
 Programmatic callers that still interpret resource contracts import
 `ResourceContract`, `ResourceContractRequirement`, `deployResourceComponent`,
 `prepareResourceRequirements`, and `resolveOutputBindings` from
 `azure-infrastructure`, not `iac-composer`. These adapters translate contract
-data into explicit deployment calls. Helpers such as `deployHostedAgentService`,
+data into explicit deployment calls. Functions such as `deployHostedAgentService`,
 `provisionTeamsApplication`, and `enableWorkflowDeployment` are bundled as source
 templates and copied into generated deployment packages.
+
+For hosted-agent containers, `configuration.hostedAgent` accepts `language`,
+`startupCommand`, `cpu`, `memory`, `protocols`, and `docker` overrides. Docker
+settings include `registry`, `path`, `context`, `image`, `tag`, and `remoteBuild`.
+Existing plans retain their Python, responses-protocol, 0.5 CPU, and 1Gi
+defaults; a different language uses the image's startup behavior unless the
+plan supplies a startup command.
+
+## Hosted-agent service lifecycle
+
+`deployHostedAgentService` composes infrastructure provisioning, azd image
+build/publish and deployment, readiness checks, and caller-selected access
+assignments. Supply the provisioning entrypoint and the service's runtime
+configuration:
+
+```ts
+import { defineDeployment, requiredEnv } from "iac-composer";
+import { deployHostedAgentService } from "./runtime/services/hosted-agent.js";
+
+export default defineDeployment(async (deployment) => {
+  const result = await deployHostedAgentService(deployment, {
+    service: "assistant",
+    directory: ".generated",
+    sourceDirectory: "./agent",
+    provision: {
+      entrypoint: "./infra.ts",
+      outputDirectory: ".generated/assistant",
+      scope: "resourceGroup",
+      resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
+      subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
+      location: requiredEnv("AZURE_LOCATION"),
+    },
+    configuration: (outputs) => ({
+      name: deployment.dryRun ? "${AGENT_NAME}" : requiredEnv("AGENT_NAME", outputs),
+      language: "dotnet",
+      startupCommand: "dotnet Assistant.dll",
+      container: { cpu: "1", memory: "2Gi" },
+      protocols: [{ protocol: "responses", version: "2.0.0" }],
+      docker: { registry: "${AZURE_CONTAINER_REGISTRY_ENDPOINT}" },
+    }),
+  });
+
+  if (result.status === "deployed") {
+    await deployment.env("publish assistant outputs", {
+      ASSISTANT_ENDPOINT: result.endpoint,
+      ASSISTANT_PRINCIPAL_ID: result.principalId,
+    });
+  }
+});
+```
+
+In this example, the provisioning module exports `AGENT_NAME`,
+`AZURE_AI_PROJECT_ID`, and `AZURE_CONTAINER_REGISTRY_ENDPOINT`. The configuration
+factory runs after provisioning and receives its outputs. Language, container
+resources, protocols, startup command, Docker paths, image tags, and environment
+values are caller-controlled. Omitting `startupCommand` uses the image's startup
+behavior.
+An async configuration factory can compose application-specific preparation
+steps after infrastructure provisioning and before the service deployment.
+
+Use `provision` for new infrastructure or omit it when deploying to existing
+infrastructure. `deploy.fromPackage` accepts an already-built image, while the
+default source-backed flow delegates image build and publishing to azd.
+`readiness` controls polling attempts and delay; defaults are 40 checks at
+15-second intervals. Terminal states and command failures stop the lifecycle.
+
+The result is discriminated by `status`: `"preview"` returns local compilation
+results through `infrastructureOutputs`; `"deployed"` also returns
+`deploymentOutputs`, the active `agent` version, `endpoint`, and `principalId`.
+Applications compose subsequent configuration or deployment steps from these
+outputs.
+
+Use provisioning-library resources for persistent settings such as
+[role assignments](https://learn.microsoft.com/azure/templates/microsoft.authorization/roleassignments)
+and [App Configuration key-values](https://learn.microsoft.com/azure/templates/microsoft.appconfiguration/configurationstores/keyvalues),
+as well as [workflow definitions and state](https://learn.microsoft.com/azure/logic-apps/logic-apps-azure-resource-manager-templates-overview).
+Application-owned helpers support explicit post-provisioning operations, including
+[OAuth connection authorization](https://learn.microsoft.com/azure/logic-apps/logic-apps-deploy-azure-resource-manager-templates#authorize-oauth-connections)
+and [hosted-agent version and identity lookup](https://learn.microsoft.com/azure/foundry/agents/how-to/deploy-hosted-agent#deployment-lifecycle).
+Role-grant calls require an identity already authorized to create assignments;
+the caller chooses the roles and scope. App Configuration writes require the
+appropriate data-plane role; use Key Vault references for secrets.
 
 ## Local development
 

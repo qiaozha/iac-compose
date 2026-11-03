@@ -1,150 +1,204 @@
 import { resolve } from "node:path";
-
-import { ensureRoleAssignment } from "iac-composer";
-import { getAzdProject } from "iac-composer";
-import type { Deployment } from "iac-composer";
 import {
-  normalizeImageName,
-  requiredProcessValue,
-} from "./values.js";
-
-interface HostedAgentVersion {
-  name: string;
-  version: string;
-  status: string;
-  instance_identity?: { principal_id?: string };
-}
+  getAzdProject,
+  type AzdDeployOptions,
+  type AzdEnvironmentValues,
+  type AzdProject,
+} from "iac-composer";
+import { ensureRoleAssignment, retry } from "iac-composer";
+import type { Deployment, ProvisionOptions, ProvisionOutputs } from "iac-composer";
 
 export interface HostedAgentAccess {
   role: string;
   scope: string;
 }
 
-export interface HostedAgentDeploymentOptions {
-  component: string;
-  generatedDirectory: string;
-  sourceDirectory: string;
+export interface HostedAgentConfiguration {
   name: string;
-  environment: Readonly<Record<string, string>>;
-  endpointOutput: string;
-  principalIdOutput: string;
+  description?: string;
+  language: string;
+  container: {
+    cpu: string;
+    memory: string;
+  };
+  startupCommand?: string;
+  protocols: readonly { protocol: string; version: string }[];
+  docker: {
+    registry: string;
+    path?: string;
+    context?: string;
+    image?: string;
+    tag?: string;
+    remoteBuild?: boolean;
+  };
+  environment?: Readonly<Record<string, string>>;
+  deploymentValues?: AzdEnvironmentValues;
   access?: readonly HostedAgentAccess[];
-  configurationStoreName?: string;
+  endpointOutput?: string;
 }
+
+export interface HostedAgentServiceOptions {
+  service: string;
+  directory: string;
+  sourceDirectory: string;
+  provision?: ProvisionOptions;
+  configuration:
+    | HostedAgentConfiguration
+    | ((infrastructureOutputs: ProvisionOutputs) =>
+        HostedAgentConfiguration | Promise<HostedAgentConfiguration>);
+  deploy?: AzdDeployOptions;
+  readiness?: HostedAgentReadinessOptions;
+}
+
+export interface HostedAgentReadinessOptions {
+  attempts?: number;
+  delayMs?: number;
+}
+
+export type HostedAgentServiceResult =
+  | {
+      status: "preview";
+      infrastructureOutputs: ProvisionOutputs;
+    }
+  | {
+      status: "deployed";
+      infrastructureOutputs: ProvisionOutputs;
+      deploymentOutputs: Record<string, string>;
+      agent: ActiveHostedAgentVersion;
+      endpoint: string;
+      principalId: string;
+    };
 
 export async function deployHostedAgentService(
   deployment: Deployment,
-  options: HostedAgentDeploymentOptions,
-): Promise<Record<string, string>> {
+  options: HostedAgentServiceOptions,
+): Promise<HostedAgentServiceResult> {
+  const readiness = hostedAgentReadiness(options.readiness);
+  const sourceDirectory = resolve(deployment.projectDirectory, options.sourceDirectory);
+  const initialManifest = typeof options.configuration === "function"
+    ? undefined
+    : createHostedAgentManifest(options.service, sourceDirectory, options.configuration);
+  const infrastructureOutputs = options.provision
+    ? await deployment.provision(`${options.service} infrastructure`, options.provision)
+    : {};
+  const configuration = typeof options.configuration === "function"
+    ? await options.configuration(infrastructureOutputs)
+    : options.configuration;
   const project = getAzdProject(deployment, {
-    directory: options.generatedDirectory,
+    directory: options.directory,
     mergeManifest: true,
-    manifest: createHostedAgentManifest({
-      service: options.component,
-      sourceDirectory: options.sourceDirectory,
-      name: options.name,
-      environment: Object.fromEntries(
-        Object.keys(options.environment).map((name) => [name, `\${${name}}`]),
-      ),
-    }),
+    manifest: initialManifest ?? createHostedAgentManifest(options.service, sourceDirectory, configuration),
     values: {
-      AZURE_CONTAINER_REGISTRY_ENDPOINT:
-        process.env.AZURE_CONTAINER_REGISTRY_ENDPOINT,
-      AZURE_AI_PROJECT_ID: process.env.AZURE_AI_PROJECT_ID,
-      FOUNDRY_PROJECT_ENDPOINT: process.env.FOUNDRY_PROJECT_ENDPOINT,
-      ...options.environment,
+      ...infrastructureOutputs,
+      ...configuration.deploymentValues,
+      ...configuration.environment,
     },
   });
   if (deployment.dryRun) await project.initialize();
 
-  const outputs: Record<string, string> = {};
-  await deployment.deploy(`${options.component} hosted Foundry agent`, async () => {
-    const azdValues = await project.deploy(options.component);
-    const active = parseHostedAgentVersion(
-      await project.capture([
-        "ai",
-        "agent",
-        "show",
-        options.component,
-        "--environment",
-        project.environment,
-        "--output",
-        "json",
-        "--no-prompt",
-      ]),
-    );
-    if (active.status !== "active") {
-      throw new Error(
-        `azd completed hosted agent deployment with status '${active.status}'.`,
-      );
+  let result: HostedAgentServiceResult | undefined;
+  await deployment.deploy(`${options.service} hosted Foundry agent`, async () => {
+    const deploymentOutputs = await project.deploy(options.service, options.deploy);
+    const agent = await waitForHostedAgentVersion(project, options.service, readiness);
+    const principalId = agent.instance_identity.principal_id;
+    const prefix = options.service.replace(/[^A-Za-z0-9]+/g, "_").toUpperCase();
+    const endpoint = configuration.endpointOutput
+      ? deploymentOutputs[configuration.endpointOutput]?.trim()
+      : deploymentOutputs[`${prefix}_AGENT_ENDPOINT`]?.trim() ||
+        deploymentOutputs[`${prefix}_ENDPOINT`]?.trim();
+    if (!endpoint) {
+      throw new Error(`azd deploy did not return an endpoint for hosted agent '${options.service}'.`);
     }
-    const principalId = active.instance_identity?.principal_id?.trim();
-    if (!principalId) {
-      throw new Error("Hosted agent version did not return an instance identity.");
-    }
-    Object.assign(outputs, azdValues, {
-      [options.endpointOutput]: hostedAgentEndpoint(
-        azdValues,
-        options.component,
-      ),
-      [options.principalIdOutput]: principalId,
-      agentName: active.name,
-      agentVersion: active.version,
-    });
-    for (const access of options.access ?? []) {
+    for (const access of configuration.access ?? []) {
       await ensureRoleAssignment(deployment, {
         principalId,
         role: access.role,
         scope: access.scope,
       });
     }
-    if (options.configurationStoreName) {
-      await updateAgentConfigurationStore(
-        deployment,
-        options.configurationStoreName,
-        active.name,
-        active.version,
-      );
-    }
+    result = {
+      status: "deployed",
+      infrastructureOutputs,
+      deploymentOutputs,
+      agent,
+      endpoint,
+      principalId,
+    };
   });
-  return outputs;
+  if (deployment.dryRun) return { status: "preview", infrastructureOutputs };
+  if (!result) {
+    throw new Error(`Hosted agent '${options.service}' deployment action did not execute.`);
+  }
+  return result;
 }
 
-interface HostedAgentManifestOptions {
-  service: string;
-  sourceDirectory: string;
-  name: string;
-  environment: Readonly<Record<string, string>>;
-}
-
-export function createHostedAgentManifest(
-  options: HostedAgentManifestOptions,
+function createHostedAgentManifest(
+  service: string,
+  sourceDirectory: string,
+  configuration: HostedAgentConfiguration,
 ): Readonly<Record<string, unknown>> {
+  for (const [field, value] of Object.entries({
+    name: configuration.name,
+    ...(configuration.description ? { description: configuration.description } : {}),
+    language: configuration.language,
+    cpu: configuration.container.cpu,
+    memory: configuration.container.memory,
+    registry: configuration.docker.registry,
+  })) {
+    if (!value.trim()) throw new Error(`Hosted agent ${field} must be non-empty.`);
+  }
+  if (configuration.protocols.length === 0) {
+    throw new Error("Hosted agents require at least one protocol.");
+  }
+  for (const protocol of configuration.protocols) {
+    if (!protocol.protocol.trim() || !protocol.version.trim()) {
+      throw new Error("Hosted agent protocols require non-empty protocol and version values.");
+    }
+  }
+  if (configuration.startupCommand !== undefined && !configuration.startupCommand.trim()) {
+    throw new Error("Hosted agent startupCommand must be non-empty when supplied.");
+  }
   return {
-    name: `deploy-${options.service}`,
+    name: `deploy-${service}`,
     services: {
-      [options.service]: {
+      [service]: {
         project: ".",
         host: "azure.ai.agent",
-        language: "python",
+        language: configuration.language,
         docker: {
-          path: resolve(options.sourceDirectory, "Dockerfile"),
-          context: options.sourceDirectory,
-          registry: "${AZURE_CONTAINER_REGISTRY_ENDPOINT}",
-          image: normalizeImageName(options.service),
-          remoteBuild: true,
+          path: resolve(sourceDirectory, configuration.docker.path ?? "Dockerfile"),
+          context: resolve(sourceDirectory, configuration.docker.context ?? "."),
+          registry: configuration.docker.registry,
+          image: configuration.docker.image ?? service,
+          ...(configuration.docker.tag ? { tag: configuration.docker.tag } : {}),
+          remoteBuild: configuration.docker.remoteBuild ?? true,
         },
         kind: "hosted",
-        name: options.name,
-        protocols: [{ protocol: "responses", version: "2.0.0" }],
-        config: { container: { resources: { cpu: "0.5", memory: "1Gi" } } },
-        container: { resources: { cpu: "0.5", memory: "1Gi" } },
-        startupCommand: "python3 -u init.py",
-        env: options.environment,
+        name: configuration.name,
+        protocols: configuration.protocols,
+        config: { container: { resources: configuration.container } },
+        container: { resources: configuration.container },
+        ...(configuration.startupCommand
+          ? { startupCommand: configuration.startupCommand }
+          : {}),
+        env: Object.fromEntries(
+          Object.keys(configuration.environment ?? {}).map((name) => [name, `\${${name}}`]),
+        ),
       },
     },
   };
 }
+
+export interface HostedAgentVersion {
+  name: string;
+  version: string;
+  status: string;
+  instance_identity?: { principal_id?: string };
+}
+
+export type ActiveHostedAgentVersion = HostedAgentVersion & {
+  instance_identity: { principal_id: string };
+};
 
 export function parseHostedAgentVersion(output: string): HostedAgentVersion {
   const value: unknown = JSON.parse(output);
@@ -153,76 +207,114 @@ export function parseHostedAgentVersion(output: string): HostedAgentVersion {
     value === null ||
     !("name" in value) ||
     typeof value.name !== "string" ||
+    !value.name.trim() ||
     !("version" in value) ||
     typeof value.version !== "string" ||
+    !value.version.trim() ||
     !("status" in value) ||
-    typeof value.status !== "string"
+    typeof value.status !== "string" ||
+    !value.status.trim()
   ) {
     throw new Error("azd ai agent show returned an invalid agent version.");
   }
-  return value as HostedAgentVersion;
+  const result: HostedAgentVersion = {
+    name: value.name,
+    version: value.version,
+    status: value.status,
+  };
+  const identity = "instance_identity" in value ? value.instance_identity : undefined;
+  if (identity !== undefined) {
+    if (typeof identity !== "object" || identity === null || Array.isArray(identity)) {
+      throw new Error("azd ai agent show returned an invalid agent instance identity.");
+    }
+    if ("principal_id" in identity) {
+      if (typeof identity.principal_id !== "string" || !identity.principal_id.trim()) {
+        throw new Error("azd ai agent show returned an invalid agent instance identity.");
+      }
+      result.instance_identity = { principal_id: identity.principal_id };
+    } else {
+      result.instance_identity = {};
+    }
+  }
+  return result;
 }
 
-function hostedAgentEndpoint(
-  values: Readonly<Record<string, string>>,
+export async function getActiveHostedAgentVersion(
+  project: Pick<AzdProject, "capture" | "environment">,
   service: string,
-): string {
-  const prefix = service.replace(/[^A-Za-z0-9]+/g, "_").toUpperCase();
-  const endpoint =
-    values[`${prefix}_AGENT_ENDPOINT`]?.trim() ||
-    values.AGENT_AGENT_ENDPOINT?.trim() ||
-    values[`${prefix}_ENDPOINT`]?.trim();
-  if (!endpoint) {
-    throw new Error("azd deploy did not return a hosted agent endpoint.");
-  }
-  return endpoint;
+): Promise<ActiveHostedAgentVersion> {
+  return requireActiveVersion(await readHostedAgentVersion(project, service), service);
 }
 
-async function updateAgentConfigurationStore(
-  deployment: Deployment,
-  storeName: string,
-  agentName: string,
-  agentVersion: string,
-): Promise<void> {
-  const subscription = requiredProcessValue("AZURE_SUBSCRIPTION_ID");
-  for (const [key, value] of [
-    ["AI_FOUNDRY_AGENT_NAME", agentName],
-    ["AI_FOUNDRY_AGENT_VERSION", agentVersion],
-  ] as const) {
-    await deployment.execute({
-      command: "az",
-      args: appConfigurationKeySetArgs(
-        subscription,
-        storeName,
-        key,
-        value,
-      ),
-    });
-  }
+async function readHostedAgentVersion(
+  project: Pick<AzdProject, "capture" | "environment">,
+  service: string,
+): Promise<HostedAgentVersion> {
+  const active = parseHostedAgentVersion(
+    await project.capture([
+      "ai",
+      "agent",
+      "show",
+      service,
+      "--environment",
+      project.environment,
+      "--output",
+      "json",
+      "--no-prompt",
+    ]),
+  );
+  return active;
 }
 
-export function appConfigurationKeySetArgs(
-  subscription: string,
-  storeName: string,
-  key: string,
-  value: string,
-): string[] {
-  return [
-    "appconfig",
-    "kv",
-    "set",
-    "--subscription",
-    subscription,
-    "--name",
-    storeName,
-    "--auth-mode",
-    "login",
-    "--key",
-    key,
-    "--value",
-    value,
-    "--yes",
-    "--output",
-    "none",
-  ];
+function requireActiveVersion(
+  active: HostedAgentVersion,
+  service: string,
+): ActiveHostedAgentVersion {
+  if (active.status !== "active") {
+    throw new Error(
+      `Hosted agent '${service}' has deployment status '${active.status}', expected 'active'.`,
+    );
+  }
+  const principalId = active.instance_identity?.principal_id?.trim();
+  if (!principalId) {
+    throw new Error(`Hosted agent '${service}' did not return an instance identity.`);
+  }
+  return { ...active, instance_identity: { principal_id: principalId } };
+}
+
+class HostedAgentPendingError extends Error {}
+
+function hostedAgentReadiness(
+  options: HostedAgentReadinessOptions = {},
+): Required<HostedAgentReadinessOptions> {
+  const attempts = options.attempts ?? 40;
+  const delayMs = options.delayMs ?? 15_000;
+  if (!Number.isInteger(attempts) || attempts < 1 || !Number.isFinite(delayMs) || delayMs < 0) {
+    throw new Error("Hosted agent readiness requires positive integer attempts and a non-negative delayMs.");
+  }
+  return { attempts, delayMs };
+}
+
+export async function waitForHostedAgentVersion(
+  project: Pick<AzdProject, "capture" | "environment">,
+  service: string,
+  options: HostedAgentReadinessOptions = {},
+): Promise<ActiveHostedAgentVersion> {
+  const { attempts, delayMs } = hostedAgentReadiness(options);
+  return retry(async () => {
+    const version = await readHostedAgentVersion(project, service);
+    if ([
+      "pending", "queued", "creating", "provisioning", "starting",
+      "activating", "updating", "deploying",
+    ].includes(version.status)) {
+      throw new HostedAgentPendingError(
+        `Hosted agent '${service}' is not ready (status: '${version.status}').`,
+      );
+    }
+    return requireActiveVersion(version, service);
+  }, {
+    attempts,
+    delayMs,
+    shouldRetry: (error) => error instanceof HostedAgentPendingError,
+  });
 }

@@ -208,6 +208,7 @@ export async function generateDeploymentCode(
     repositoryRoot,
     requirements,
     solution,
+    validationPlan.roles.length > 0,
   )) {
     files.set(path, source);
   }

@@ -1,4 +1,4 @@
-import { captureAzure } from "iac-composer";
+import { requireApiConnectionAuthorization } from "./api-connections.js";
 import type { Deployment } from "iac-composer";
 import {
   requiredProcessValue,
@@ -20,11 +20,13 @@ export async function enableWorkflowDeployment(
   await deployment.deploy(`${options.component} workflow '${options.workflowId}'`, async () => {
     validateWorkflowParameters(options.workflowId, options.validationValues);
     if (options.connectionName) {
-      await requireAuthorizedConnection(
-        deployment,
-        options.connectionName,
-        options.authorizationTenantId,
-      );
+      await requireApiConnectionAuthorization(deployment, {
+        subscriptionId: requiredProcessValue("AZURE_SUBSCRIPTION_ID"),
+        resourceGroup: requiredProcessValue("AZURE_RESOURCE_GROUP"),
+        name: options.connectionName,
+        portalTenantId: process.env.AZURE_TENANT_ID,
+        authorizationTenantId: options.authorizationTenantId,
+      });
     }
     await deployment.execute({
       command: "az",
@@ -48,49 +50,6 @@ export async function enableWorkflowDeployment(
       ],
     });
   });
-}
-
-async function requireAuthorizedConnection(
-  deployment: Deployment,
-  connectionName: string,
-  authorizationTenantId?: string,
-): Promise<void> {
-  const subscription = requiredProcessValue("AZURE_SUBSCRIPTION_ID");
-  const resourceGroup = requiredProcessValue("AZURE_RESOURCE_GROUP");
-  const status = (
-    await captureAzure(deployment, [
-      "resource",
-      "show",
-      "--subscription",
-      subscription,
-      "--resource-group",
-      resourceGroup,
-      "--resource-type",
-      "Microsoft.Web/connections",
-      "--name",
-      connectionName,
-      "--api-version",
-      "2016-06-01",
-      "--query",
-      "properties.statuses[0].status",
-      "--output",
-      "tsv",
-    ]).catch(() => "")
-  ).trim();
-  if (status === "Connected") return;
-  const tenant = process.env.AZURE_TENANT_ID?.trim() ?? "common";
-  const resourceId =
-    `/subscriptions/${subscription}/resourceGroups/${resourceGroup}` +
-    `/providers/Microsoft.Web/connections/${connectionName}`;
-  const authorizationAccount = authorizationTenantId
-    ? ` with an account from tenant '${authorizationTenantId}'`
-    : "";
-  throw new Error(
-    `API connection '${connectionName}' requires interactive consent ` +
-      `(current status: '${status || "NotConnected"}'). Open ` +
-      `https://portal.azure.com/#@${tenant}/resource${resourceId}/edit, ` +
-      `authorize the connection${authorizationAccount}, then rerun iac-composer.`,
-  );
 }
 
 export function validateWorkflowParameters(

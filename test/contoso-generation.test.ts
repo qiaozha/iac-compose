@@ -119,13 +119,16 @@ test("Contoso components provision their owned resources", async () => {
     agentLifecycle,
     /parameters: \{ location: infrastructureLocation \}/,
   );
-  assert.match(
-    agentLifecycle,
-    /delete persistedInfrastructureOutputs\.AZURE_LOCATION/,
-  );
+  assert.match(agentLifecycle, /provision: \{\s*layer: generatedAgentLayer/);
+  assert.match(agentLifecycle, /result\.infrastructureOutputs/);
   assert.match(
     agentLifecycle,
     /delete persistedDeploymentOutputs\.AZURE_LOCATION;\n  process\.env\.AZURE_LOCATION = solutionLocation;/,
+  );
+  assert.doesNotMatch(agentLifecycle, /configurationStoreName/);
+  assert.ok(
+    agentLifecycle.indexOf("setAppConfigurationKeyValues(") >
+      agentLifecycle.indexOf('deployment.deploy("persist agent deployment outputs"'),
   );
 
   assert.match(backend, /new DatabaseAccount\(/);
@@ -231,9 +234,7 @@ test("Contoso components provision their owned resources", async () => {
   assert.doesNotMatch(logicApp, /autoReplyIdentityPrincipalId/);
   assert.doesNotMatch(logicApp, /new Site\(|new DatabaseAccount\(/);
 
-  const agentProvision = agentLifecycle.indexOf("deployment.provision(");
-  const agentDeploy = agentLifecycle.indexOf("deployHostedAgentService(");
-  assert.ok(agentProvision >= 0 && agentDeploy > agentProvision);
+  assert.match(agentLifecycle, /from "\.\.\/\.\.\/runtime\/services\/hosted-agent\.js"/);
   for (const lifecycle of [backendLifecycle, frontendLifecycle]) {
     const provision = lifecycle.indexOf("deployment.provision(");
     const deploy = lifecycle.indexOf("deployAppServiceContainer(");

@@ -1,4 +1,4 @@
-import { captureAzure } from "iac-composer";
+import { getApiConnectionStatus } from "./api-connections.js";
 import type { Deployment } from "iac-composer";
 import {
   requiredProcessValue,
@@ -13,27 +13,12 @@ export interface AuthorizedConnectionOptions {
 export async function prepareAuthorizedConnection(
   deployment: Deployment,
   options: AuthorizedConnectionOptions,
-): Promise<string> {
-  const status = (
-    await captureAzure(deployment, [
-      "resource",
-      "show",
-      "--subscription",
-      requiredProcessValue("AZURE_SUBSCRIPTION_ID"),
-      "--resource-group",
-      requiredProcessValue("AZURE_RESOURCE_GROUP"),
-      "--resource-type",
-      "Microsoft.Web/connections",
-      "--name",
-      options.name,
-      "--api-version",
-      "2016-06-01",
-      "--query",
-      "properties.statuses[0].status",
-      "--output",
-      "tsv",
-    ]).catch(() => "")
-  ).trim();
+): Promise<string | undefined> {
+  const status = await getApiConnectionStatus(deployment, {
+    subscriptionId: requiredProcessValue("AZURE_SUBSCRIPTION_ID"),
+    resourceGroup: requiredProcessValue("AZURE_RESOURCE_GROUP"),
+    name: options.name,
+  });
   process.env[resourceCreateEnvironmentName(options.resourceId)] =
     status === "Connected" ? "false" : "true";
   return status;

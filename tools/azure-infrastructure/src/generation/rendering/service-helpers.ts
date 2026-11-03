@@ -9,23 +9,33 @@ export async function loadServiceHelperSources(
   packageDirectory: string,
   requirements: ResourceRequirements,
   solution: DeploymentSolution,
+  needsAuthorization = false,
 ): Promise<ReadonlyMap<string, string>> {
   const helpers = new Set<string>();
-  if (solution.components.some((component) => component.kind === "hosted-agent")) {
-    helpers.add("hosted-agent");
-    helpers.add("values");
+  const hostedComponents = solution.components.filter(
+    (component) => component.kind === "hosted-agent",
+  );
+  if (hostedComponents.length > 0) helpers.add("hosted-agent");
+  if (requirements.resources.some((resource) =>
+    resource.kind === "configuration-store" &&
+    hostedComponents.some((component) => resource.requiredBy.includes(component.id))
+  )) {
+    helpers.add("app-configuration");
   }
+  if (needsAuthorization) helpers.add("authorization");
   if (requirements.resources.some((resource) => resource.kind === "teams-application")) {
     helpers.add("teams");
   }
   if (requirements.resources.some((resource) => resource.kind === "workflow-host")) {
     helpers.add("workflows");
+    helpers.add("api-connections");
     helpers.add("values");
   }
   if (requirements.resources.some(
     (resource) => resource.kind === "authorized-api-connection",
   )) {
     helpers.add("connections");
+    helpers.add("api-connections");
     helpers.add("values");
   }
   const sources = await Promise.all(

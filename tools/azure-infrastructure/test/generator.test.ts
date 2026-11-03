@@ -10,7 +10,9 @@ import { promisify } from "node:util";
 import {
   generateDeploymentCode,
   type DeploymentCodeGenerationProgress,
+  type ResourceRequirement,
 } from "../src/generator.js";
+import { renderHostedAgentComponentSource } from "../src/generation/rendering/components/hosted-agent.js";
 import {
   provisioningDependencies,
   renderEntraIdentityConfigurationSource,
@@ -22,6 +24,76 @@ const runtimeRoot = resolve(
   dirname(fileURLToPath(import.meta.resolve("iac-composer"))),
   "..",
 );
+
+for (const withConfiguration of [false, true]) {
+  test(`hosted-agent composition ${withConfiguration ? "separates" : "omits"} application configuration`, () => {
+    const resources: ResourceRequirement[] = [{
+      id: "agentCompute",
+      kind: "container-host",
+      requiredBy: ["agent"],
+      produces: ["agentEndpoint", "agentIdentityPrincipalId"],
+    }];
+    if (withConfiguration) {
+      resources.push({
+        id: "customerConfiguration",
+        kind: "configuration-store",
+        requiredBy: ["agent"],
+      });
+    }
+    const source = renderHostedAgentComponentSource({
+      component: "agent",
+      functionName: "agent",
+      resources,
+      allResources: resources,
+      hasProvisioning: false,
+      configureEntra: false,
+    });
+    assert.doesNotMatch(source, /configurationStoreName/);
+    if (withConfiguration) {
+      assert.match(source, /from "\.\.\/\.\.\/runtime\/services\/app-configuration\.js"/);
+      assert.ok(
+        source.indexOf("setAppConfigurationKeyValues(") >
+          source.indexOf('deployment.deploy("persist agent deployment outputs"'),
+      );
+      assert.match(source, /storeName: requiredEnv\("DEPLOY_RESOURCE_CUSTOMERCONFIGURATION_NAME"\)/);
+    } else {
+      assert.doesNotMatch(source, /AppConfiguration|AI_FOUNDRY_AGENT_|application configuration/);
+    }
+  });
+}
+
+test("hosted lifecycle rendering carries runtime settings and provisioning into application-owned source", () => {
+  const resources: ResourceRequirement[] = [{
+    id: "agentCompute",
+    kind: "container-host",
+    requiredBy: ["agent"],
+    configuration: {
+      hostedAgent: {
+        language: "dotnet",
+        cpu: "2",
+        memory: "4Gi",
+        protocols: [{ protocol: "chat", version: "1.0" }],
+        docker: { path: "docker/agent.Dockerfile", remoteBuild: false },
+      },
+    },
+  }];
+  const source = renderHostedAgentComponentSource({
+    component: "agent",
+    functionName: "agent",
+    resources,
+    allResources: resources,
+    hasProvisioning: true,
+    configureEntra: false,
+  });
+  assert.match(source, /provision: \{\s*layer: generatedAgentLayer/);
+  assert.match(source, /language: "dotnet"/);
+  assert.match(source, /container: \{ cpu: "2", memory: "4Gi" \}/);
+  assert.match(source, /"protocol":"chat","version":"1.0"/);
+  assert.match(source, /path: "docker\/agent.Dockerfile"/);
+  assert.match(source, /remoteBuild: false/);
+  assert.doesNotMatch(source, /python|init\.py|iac-composer\/providers/);
+  assert.match(source, /runtime\/services\/hosted-agent/);
+});
 
 test("generates chatbot-style deployment code in dependency order", async () => {
   const root = await mkdtemp(join(tmpdir(), "iac-composer-generator-"));
@@ -641,6 +713,12 @@ test("orders hosted agents before application services", async () => {
     await readFile(join(outputDirectory, "components/agent/index.ts"), "utf8"),
     /deployHostedAgentService/,
   );
+  const agent = await readFile(join(outputDirectory, "components/agent/index.ts"), "utf8");
+  assert.match(agent, /from "\.\.\/\.\.\/runtime\/services\/hosted-agent\.js"/);
+  assert.doesNotMatch(agent, /provision:/);
+  assert.match(agent, /configuration: \(\) =>/);
+  await access(join(outputDirectory, "runtime/services/hosted-agent.ts"));
+  assert.doesNotMatch(agent, /setAppConfigurationKeyValues|configurationStoreName|AI_FOUNDRY_AGENT_/);
 });
 
 test("runs generated code outside the package dependency tree", async () => {

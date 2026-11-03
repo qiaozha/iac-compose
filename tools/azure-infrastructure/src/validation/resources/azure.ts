@@ -1,4 +1,4 @@
-export { ensureDeploymentPrincipalRoles } from "iac-composer";
+export { ensureDeploymentPrincipalRoles } from "../../runtime/services/authorization.js";
 
 import {
   captureAzure,

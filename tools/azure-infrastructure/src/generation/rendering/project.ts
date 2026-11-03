@@ -197,11 +197,10 @@ export function renderSharedComponentSource(
   });
 `;
   return `import {
-  ensureDeploymentPrincipalRoles,
   ensureResourceGroup,
   type Deployment,
 } from "iac-composer";
-import { persistEnvironment, requiredEnv } from "../../runtime/environment.js";
+${roles.length ? 'import { ensureDeploymentPrincipalRoles } from "../../runtime/services/authorization.js";\n' : ""}import { persistEnvironment, requiredEnv } from "../../runtime/environment.js";
 import {
   generatedSharedLayer,
 } from "../../runtime/paths.js";

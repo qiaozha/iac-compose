@@ -2,11 +2,11 @@ import type {
   DeploymentSolution,
   ResourceRequirements,
 } from "../../generation/contracts/deployment.js";
-import type { DeploymentRoleRequirement } from "iac-composer";
+import type { DeploymentRoleRequirement } from "../../runtime/services/authorization.js";
 export type {
   DeploymentRoleRequirement,
   EnsureDeploymentPrincipalRolesOptions,
-} from "iac-composer";
+} from "../../runtime/services/authorization.js";
 
 export interface ResourceValidationPlan {
   readonly providers: readonly string[];

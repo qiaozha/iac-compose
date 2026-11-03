@@ -58,11 +58,9 @@ test("Logic App lifecycle provisions instead of patching a workflow JSON file", 
     lifecycle,
     /requiredEnv\("AZURE_TENANT_ID"\),\s*teamsTenantId/,
   );
-  assert.match(
-    lifecycle,
-    /#@\$\{azureTenantId\}\/resource\$\{resourceId\}\/edit/,
-  );
-  assert.match(lifecycle, /account from Teams tenant '\$\{teamsTenantId\}'/);
+  assert.match(lifecycle, /requireApiConnectionAuthorization\(deployment/);
+  assert.match(lifecycle, /portalTenantId: azureTenantId/);
+  assert.match(lifecycle, /authorizationTenantId: teamsTenantId/);
   assert.doesNotMatch(lifecycle, /fetch\(|readFile\(|workflow-definition\.json/);
   await assert.rejects(access(resolve(componentRoot, "workflow-definition.json")));
 });

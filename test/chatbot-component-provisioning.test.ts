@@ -76,7 +76,7 @@ const components: ReadonlyArray<{
   },
 ];
 
-test("each component owns a direct provisioning lifecycle call", async () => {
+test("each component owns its provisioning directly or through its service lifecycle", async () => {
   for (const component of components) {
     const source = await readFile(
       resolve(
@@ -86,7 +86,12 @@ test("each component owns a direct provisioning lifecycle call", async () => {
       ),
       "utf8",
     );
-    assert.match(source, /deployment\.provision\(/, component.name);
+    if (component.name === "agent") {
+      assert.match(source, /deployHostedAgentService\(deployment/, component.name);
+      assert.match(source, /provision: \{\s*layer: generatedAgentLayer/, component.name);
+    } else {
+      assert.match(source, /deployment\.provision\(/, component.name);
+    }
   }
 });
 

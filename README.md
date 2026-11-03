@@ -249,10 +249,10 @@ All implementation is grouped under
   deployment, RBAC, resource-group creation, account lookup, and environment-file
   primitives are exported by `iac-composer` itself.
 
-The [Contoso example](examples/contoso) owns its Foundry agent, Teams application,
-and Logic App deployment helpers under
-[runtime/services/](examples/contoso/runtime/services). Its components call these
-local TypeScript helpers as part of their authored deployment lifecycle.
+The [Contoso agent component](examples/contoso/components/agent/index.ts) owns its
+hosted-agent lifecycle, provisioning layer, and runtime configuration. Service
+workflows for the agent, Teams application, and Logic App live under
+[runtime/services/](examples/contoso/runtime/services).
 
 Deployment outputs and lifecycle values are stored in the shared azd environment
 under `examples/chatbot/.generated/.azure/`. Non-secret environment inputs live

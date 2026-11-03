@@ -1,8 +1,13 @@
 import {
   ensureRoleAssignment,
   resolveAzureAccountContext,
-} from "../azure.js";
-import type { Deployment } from "../index.js";
+} from "iac-composer";
+import type { Deployment } from "iac-composer";
+
+export {
+  ensureRoleAssignment,
+  type AzureRoleAssignmentOptions,
+} from "iac-composer";
 
 export interface DeploymentRoleRequirement {
   readonly provider: string;
@@ -24,6 +29,7 @@ export async function ensureDeploymentPrincipalRoles(
   deployment: Deployment,
   options: EnsureDeploymentPrincipalRolesOptions,
 ): Promise<void> {
+  if (deployment.dryRun) return;
   const account = await resolveAzureAccountContext(deployment, options);
   for (const role of options.roles) {
     await ensureRoleAssignment(deployment, {

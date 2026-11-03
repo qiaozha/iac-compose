@@ -1,8 +1,8 @@
 import {
-  ensureDeploymentPrincipalRoles,
   ensureResourceGroup,
   type Deployment,
 } from "iac-composer";
+import { ensureDeploymentPrincipalRoles } from "../../runtime/services/authorization.js";
 import { persistEnvironment, requiredEnv } from "../../runtime/environment.js";
 import {
   generatedSharedLayer,

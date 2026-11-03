@@ -1,7 +1,9 @@
-import { resolve } from "node:path";
+import {
+  deployHostedAgentService,
+  type HostedAgentConfiguration,
+} from "../../runtime/services/hosted-agent.js";
 
 import {
-  getAzdProject,
   ensureRoleAssignment,
   type Deployment,
 } from "iac-composer";
@@ -23,87 +25,46 @@ import { configureServerApplication } from "../shared/identity.js";
 const agentName = "azure-sdk-chat-agent";
 const foundryUserRoleId = "53ca6127-db72-4b80-b1b0-d745d6d5456d";
 
-export interface AgentVersion {
-  name: string;
-  version: string;
-  status: string;
-  instance_identity?: { principal_id?: string };
-}
-
 export async function agent(deployment: Deployment): Promise<void> {
-  const outputs = await deployment.provision("Foundry agent infrastructure", {
-    layer: generatedAgentLayer,
-    deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-agent`,
-    scope: "resourceGroup",
-    resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
-    subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
-    location: requiredEnv("AZURE_LOCATION"),
-  });
-  if (deployment.dryRun) {
-    await configureServerApplication(deployment);
-  }
-  await deployment.deploy(
-    "persist, configure, and seed agent infrastructure",
-    async () => {
-      await persistEnvironment(deployment, outputs);
-      await ensureAgentServerFoundryAccess(deployment);
-      await configureServerApplication(deployment);
-      await seedRuntimeConfiguration(deployment);
+  const result = await deployHostedAgentService(deployment, {
+    service: "agent",
+    directory: generatedRoot,
+    sourceDirectory: agentRoot,
+    provision: {
+      layer: generatedAgentLayer,
+      deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-agent`,
+      scope: "resourceGroup",
+      resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
+      subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
+      location: requiredEnv("AZURE_LOCATION"),
     },
-  );
-
-  if (deployment.dryRun) {
-    const project = getAzdProject(deployment, {
-      directory: generatedRoot,
-      mergeManifest: true,
-      manifest: createAgentAzdManifest({
-        dockerfile: resolve(agentRoot, "agents/chat_agent/Dockerfile"),
-        context: agentRoot,
-      }),
-    });
-    await project.initialize();
-  }
-
-  await deployment.deploy("hosted Foundry agent", async () => {
-    const project = getAzdProject(deployment, {
-      directory: generatedRoot,
-      mergeManifest: true,
-      manifest: createAgentAzdManifest({
-        dockerfile: resolve(agentRoot, "agents/chat_agent/Dockerfile"),
-        context: agentRoot,
+    configuration: async (outputs) => {
+      if (deployment.dryRun) await configureServerApplication(deployment);
+      await deployment.deploy("persist, configure, and seed agent infrastructure", async () => {
+        await persistEnvironment(deployment, outputs);
+        await ensureAgentServerFoundryAccess(deployment);
+        await configureServerApplication(deployment);
+        await seedRuntimeConfiguration(deployment);
+      });
+      return createAgentServiceConfiguration({
         tag: process.env.AGENT_IMAGE_TAG?.trim(),
-      }),
-      values: {
-        AZURE_CONTAINER_REGISTRY_ENDPOINT:
-          process.env.AZURE_CONTAINER_REGISTRY_ENDPOINT,
-        AZURE_AI_PROJECT_ID: requiredEnv("AZURE_AI_PROJECT_ID"),
-        FOUNDRY_PROJECT_ENDPOINT: requiredEnv("FOUNDRY_PROJECT_ENDPOINT"),
-        AZURE_APPCONFIG_ENDPOINT: requiredEnv("AZURE_APPCONFIG_ENDPOINT"),
-      },
-    });
-    const values = await project.deploy("agent");
-    const active = parseAgentVersion(
-      await project.capture([
-        "ai",
-        "agent",
-        "show",
-        "agent",
-        "--environment",
-        project.environment,
-        "--output",
-        "json",
-        "--no-prompt",
-      ]),
-    );
-    if (active.status !== "active") {
-      throw new Error(
-        `azd completed agent deployment with status '${active.status}'.`,
-      );
+        appConfigurationEndpoint: deployment.dryRun
+          ? "${AZURE_APPCONFIG_ENDPOINT}"
+          : requiredEnv("AZURE_APPCONFIG_ENDPOINT"),
+      });
+    },
+  });
+
+  await deployment.deploy("persist and configure hosted agent outputs", async () => {
+    if (result.status !== "deployed") {
+      throw new Error("Hosted agent outputs require a completed deployment.");
     }
+    const values = result.deploymentOutputs;
+    const active = result.agent;
     const persisted = {
       AGENT_AGENT_NAME: active.name,
       AGENT_AGENT_VERSION: active.version,
-      AGENT_AGENT_ENDPOINT: requiredAzdValue(values, "AGENT_AGENT_ENDPOINT"),
+      AGENT_AGENT_ENDPOINT: result.endpoint,
       AGENT_AGENT_RESPONSES_ENDPOINT: requiredAzdValue(
         values,
         "AGENT_AGENT_RESPONSES_ENDPOINT",
@@ -122,63 +83,38 @@ export async function agent(deployment: Deployment): Promise<void> {
   });
 }
 
-export interface AgentAzdManifestOptions {
-  dockerfile: string;
-  context: string;
+export interface AgentServiceConfigurationOptions {
   registry?: string;
   image?: string;
   tag?: string;
+  appConfigurationEndpoint: string;
 }
 
-export function createAgentAzdManifest(
-  options: AgentAzdManifestOptions,
-): Readonly<Record<string, unknown>> {
+export function createAgentServiceConfiguration(
+  options: AgentServiceConfigurationOptions,
+): HostedAgentConfiguration {
   return {
-    name: "chatbot-agent",
-    services: {
-      agent: {
-        project: ".",
-        host: "azure.ai.agent",
-        language: "python",
-        docker: {
-          path: options.dockerfile,
-          context: options.context,
-          registry:
-            options.registry ?? "${AZURE_CONTAINER_REGISTRY_ENDPOINT}",
-          image: options.image ?? "azure-sdk-chat-agent",
-          ...(options.tag ? { tag: options.tag } : {}),
-          remoteBuild: true,
-        },
-        kind: "hosted",
-        name: agentName,
-        description: "Azure SDK Q&A hosted agent",
-        protocols: [{ protocol: "responses", version: "2.0.0" }],
-        config: { container: { resources: { cpu: "0.5", memory: "1Gi" } } },
-        container: { resources: { cpu: "0.5", memory: "1Gi" } },
-        startupCommand: "python init.py",
-        env: {
-          AZURE_APPCONFIG_ENDPOINT: "${AZURE_APPCONFIG_ENDPOINT}",
-        },
-      },
+    language: "python",
+    docker: {
+      path: "agents/chat_agent/Dockerfile",
+      context: ".",
+      registry: options.registry ?? "${AZURE_CONTAINER_REGISTRY_ENDPOINT}",
+      image: options.image ?? "azure-sdk-chat-agent",
+      ...(options.tag ? { tag: options.tag } : {}),
+      remoteBuild: true,
+    },
+    name: agentName,
+    description: "Azure SDK Q&A hosted agent",
+    protocols: [{ protocol: "responses", version: "2.0.0" }],
+    container: { cpu: "0.5", memory: "1Gi" },
+    startupCommand: "python init.py",
+    environment: { AZURE_APPCONFIG_ENDPOINT: options.appConfigurationEndpoint },
+    deploymentValues: {
+      AZURE_CONTAINER_REGISTRY_ENDPOINT: process.env.AZURE_CONTAINER_REGISTRY_ENDPOINT,
+      AZURE_AI_PROJECT_ID: process.env.AZURE_AI_PROJECT_ID,
+      FOUNDRY_PROJECT_ENDPOINT: process.env.FOUNDRY_PROJECT_ENDPOINT,
     },
   };
-}
-
-export function parseAgentVersion(output: string): AgentVersion {
-  const value: unknown = JSON.parse(output);
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    !("name" in value) ||
-    typeof value.name !== "string" ||
-    !("version" in value) ||
-    typeof value.version !== "string" ||
-    !("status" in value) ||
-    typeof value.status !== "string"
-  ) {
-    throw new Error("azd ai agent show returned an invalid agent version.");
-  }
-  return value as AgentVersion;
 }
 
 async function ensureAgentServerFoundryAccess(

@@ -3,6 +3,23 @@ import { generatedLayerName } from "../names.js";
 
 const outputBindingPattern = /\$\{output\.([A-Za-z][A-Za-z0-9_]*)\}/g;
 
+export function componentProvisioningOptions(
+  component: string,
+  resources: readonly ResourceRequirement[] = [],
+): string {
+  const ownsModelDeployment = resources.some(
+    (resource) => resource.kind === "model-deployment",
+  );
+  return `{
+      layer: ${generatedLayerName(component)},
+      deploymentName: \`\${requiredEnv("AZURE_ENV_NAME")}-${escapeTemplateLiteral(component)}\`,
+      scope: "resourceGroup",
+      resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
+      subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
+      location: ${ownsModelDeployment ? "infrastructureLocation" : 'requiredEnv("AZURE_LOCATION")'},
+${ownsModelDeployment ? "      parameters: { location: infrastructureLocation },\n" : ""}    }`;
+}
+
 export function componentProvisioningBlock(
   component: string,
   hasProvisioning: boolean,
@@ -10,20 +27,13 @@ export function componentProvisioningBlock(
   resources: readonly ResourceRequirement[] = [],
 ): string {
   if (!hasProvisioning) return "";
-  const generatedLayer = generatedLayerName(component);
   const ownsModelDeployment = resources.some(
     (resource) => resource.kind === "model-deployment",
   );
-  const location = ownsModelDeployment
-    ? "infrastructureLocation"
-    : 'requiredEnv("AZURE_LOCATION")';
   const locationDeclaration = ownsModelDeployment
     ? `  const solutionLocation = requiredEnv("AZURE_LOCATION");
   const infrastructureLocation = process.env.AZURE_AI_LOCATION?.trim() || "eastus";
 `
-    : "";
-  const locationOverride = ownsModelDeployment
-    ? "      parameters: { location: infrastructureLocation },\n"
     : "";
   const persistedOutputs = ownsModelDeployment
     ? "persistedInfrastructureOutputs"
@@ -35,14 +45,7 @@ export function componentProvisioningBlock(
     : "";
   return `${locationDeclaration}  const infrastructureOutputs = await deployment.provision(
     ${JSON.stringify(`${component} infrastructure`)},
-    {
-      layer: ${generatedLayer},
-      deploymentName: \`\${requiredEnv("AZURE_ENV_NAME")}-${escapeTemplateLiteral(component)}\`,
-      scope: "resourceGroup",
-      resourceGroup: requiredEnv("AZURE_RESOURCE_GROUP"),
-      subscription: requiredEnv("AZURE_SUBSCRIPTION_ID"),
-      location: ${location},
-${locationOverride}    },
+    ${componentProvisioningOptions(component, resources)},
   );
 ${filterAiLocation}  await deployment.deploy(${JSON.stringify(`persist ${component} infrastructure`)}, async () => {
     await persistEnvironment(
