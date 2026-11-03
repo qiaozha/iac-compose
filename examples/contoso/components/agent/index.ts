@@ -1,9 +1,10 @@
+import { deployHostedAgentService } from "../../runtime/services/hosted-agent.js";
+import { setAppConfigurationKeyValues } from "../../runtime/services/app-configuration.js";
 import { resolve } from "node:path";
 
 import {
-  deployHostedAgentService,
   type Deployment,
-} from "iac-compose";
+} from "iac-composer";
 import {
   persistEnvironment,
   requiredEnv,
@@ -17,9 +18,11 @@ import {
 export async function agent(deployment: Deployment): Promise<void> {
   const solutionLocation = requiredEnv("AZURE_LOCATION");
   const infrastructureLocation = process.env.AZURE_AI_LOCATION?.trim() || "eastus";
-  const infrastructureOutputs = await deployment.provision(
-    "agent infrastructure",
-    {
+  const result = await deployHostedAgentService(deployment, {
+    service: "agent",
+    directory: generatedRoot,
+    sourceDirectory: resolve(packageRoot, "components/agent"),
+    provision: {
       layer: generatedAgentLayer,
       deploymentName: `${requiredEnv("AZURE_ENV_NAME")}-agent`,
       scope: "resourceGroup",
@@ -28,27 +31,22 @@ export async function agent(deployment: Deployment): Promise<void> {
       location: infrastructureLocation,
       parameters: { location: infrastructureLocation },
     },
-  );
-  const persistedInfrastructureOutputs = { ...infrastructureOutputs };
-  delete persistedInfrastructureOutputs.AZURE_LOCATION;
-  await deployment.deploy("persist agent infrastructure", async () => {
-    await persistEnvironment(
-      deployment,
-      persistedInfrastructureOutputs,
-    );
-  });
-
-  const outputs = await deployHostedAgentService(deployment, {
-    component: "agent",
-    generatedDirectory: generatedRoot,
-    sourceDirectory: resolve(packageRoot, "components/agent"),
-    name: deploymentValue(deployment, "agentName"),
-    environment: {
+    configuration: () => ({
+      name: deploymentValue(deployment, "agentName"),
+      language: "python",
+      startupCommand: "python3 -u init.py",
+      container: { cpu: "0.5", memory: "1Gi" },
+      protocols: [{ protocol: "responses", version: "2.0.0" }],
+      docker: { registry: "${AZURE_CONTAINER_REGISTRY_ENDPOINT}", remoteBuild: true },
+      deploymentValues: {
+        AZURE_CONTAINER_REGISTRY_ENDPOINT: process.env.AZURE_CONTAINER_REGISTRY_ENDPOINT,
+        AZURE_AI_PROJECT_ID: process.env.AZURE_AI_PROJECT_ID,
+        FOUNDRY_PROJECT_ENDPOINT: process.env.FOUNDRY_PROJECT_ENDPOINT,
+      },
+      environment: {
       "AZURE_APPCONFIG_ENDPOINT": deploymentValue(deployment, "appConfigurationEndpoint"),
-    },
-    endpointOutput: "agentEndpoint",
-    principalIdOutput: "agentIdentityPrincipalId",
-    access: deployment.dryRun
+      },
+      access: deployment.dryRun
       ? []
       : [
       {
@@ -73,11 +71,16 @@ export async function agent(deployment: Deployment): Promise<void> {
           ),
         },
       ],
-    configurationStoreName: deployment.dryRun
-      ? undefined
-      : requiredEnv("DEPLOY_RESOURCE_RUNTIMECONFIGURATION_NAME"),
-
+    }),
   });
+  const outputs: Record<string, string> = result.status === "deployed" ? {
+    ...result.infrastructureOutputs,
+    ...result.deploymentOutputs,
+    agentEndpoint: result.endpoint,
+    agentIdentityPrincipalId: result.principalId,
+    agentName: result.agent.name,
+    agentVersion: result.agent.version,
+  } : {};
   const persistedDeploymentOutputs = { ...outputs };
   delete persistedDeploymentOutputs.AZURE_LOCATION;
   process.env.AZURE_LOCATION = solutionLocation;
@@ -86,6 +89,16 @@ export async function agent(deployment: Deployment): Promise<void> {
       deployment,
       persistedDeploymentOutputs,
     );
+  });
+  await deployment.deploy("update agent application configuration", async () => {
+    await setAppConfigurationKeyValues(deployment, {
+      subscriptionId: requiredEnv("AZURE_SUBSCRIPTION_ID"),
+      storeName: requiredEnv("DEPLOY_RESOURCE_RUNTIMECONFIGURATION_NAME"),
+      values: {
+        AI_FOUNDRY_AGENT_NAME: requiredEnv("agentName"),
+        AI_FOUNDRY_AGENT_VERSION: requiredEnv("agentVersion"),
+      },
+    });
   });
 }
 

@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { createDeployment, getAzdProject } from "../src/index.js";
 
 test("dry-run azd preparation writes a manifest without environment state", async () => {
-  const root = await mkdtemp(join(tmpdir(), "iac-compose-azd-dry-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-composer-azd-dry-"));
   const projectDirectory = join(root, "project");
   const deployment = createDeployment({
     dryRun: true,
@@ -30,7 +30,7 @@ test("dry-run azd preparation writes a manifest without environment state", asyn
 });
 
 test("azd service preparation merges with component infrastructure", async () => {
-  const root = await mkdtemp(join(tmpdir(), "iac-compose-azd-merge-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-composer-azd-merge-"));
   const projectDirectory = join(root, "component");
   const deployment = createDeployment({
     dryRun: true,
@@ -73,7 +73,7 @@ test("azd service preparation merges with component infrastructure", async () =>
 
 test("azd project initialization rejects legacy generated project state", async () => {
   for (const legacyState of ["marker", "manifest"] as const) {
-    const root = await mkdtemp(join(tmpdir(), `iac-compose-azd-legacy-${legacyState}-`));
+    const root = await mkdtemp(join(tmpdir(), `iac-composer-azd-legacy-${legacyState}-`));
     const projectDirectory = join(root, "project");
     await import("node:fs/promises").then(({ mkdir }) => mkdir(projectDirectory));
     if (legacyState === "marker") {
@@ -94,7 +94,7 @@ test("azd project initialization rejects legacy generated project state", async 
 });
 
 test("azd helper generates an isolated project and imports lifecycle outputs", async () => {
-  const root = await mkdtemp(join(tmpdir(), "iac-compose-azd-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-composer-azd-"));
   const bin = join(root, "bin");
   const projectDirectory = join(root, "project");
   const invocationLog = join(root, "azd.log");
@@ -103,13 +103,13 @@ test("azd helper generates an isolated project and imports lifecycle outputs", a
   await writeFile(
     fakeAzd,
     `#!/bin/sh
-printf '%s\n' "$*" >> "$IAC_COMPOSE_AZD_LOG"
+printf '%s\n' "$*" >> "$IAC_COMPOSER_AZD_LOG"
 if [ "$1 $2" = "env new" ]; then
   mkdir -p ".azure/$3"
   printf '{}\n' > ".azure/$3/config.json"
 fi
 if [ "$1 $2 $3" = "env set --file" ]; then
-  sed 's/^/env-value /' "$4" >> "$IAC_COMPOSE_AZD_LOG"
+  sed 's/^/env-value /' "$4" >> "$IAC_COMPOSER_AZD_LOG"
 fi
 if [ "$1 $2" = "env get-values" ]; then
   printf '%s\n' 'SERVICE_NAME="deployed-service"' 'SERVICE_URI="https://example.test"'
@@ -119,9 +119,9 @@ fi
   await chmod(fakeAzd, 0o755);
 
   const previousPath = process.env.PATH;
-  const previousLog = process.env.IAC_COMPOSE_AZD_LOG;
+  const previousLog = process.env.IAC_COMPOSER_AZD_LOG;
   process.env.PATH = `${bin}:${previousPath ?? ""}`;
-  process.env.IAC_COMPOSE_AZD_LOG = invocationLog;
+  process.env.IAC_COMPOSER_AZD_LOG = invocationLog;
   try {
     const deployment = createDeployment({
       environment: "dev",
@@ -198,8 +198,8 @@ fi
     );
   } finally {
     process.env.PATH = previousPath;
-    if (previousLog === undefined) delete process.env.IAC_COMPOSE_AZD_LOG;
-    else process.env.IAC_COMPOSE_AZD_LOG = previousLog;
+    if (previousLog === undefined) delete process.env.IAC_COMPOSER_AZD_LOG;
+    else process.env.IAC_COMPOSER_AZD_LOG = previousLog;
     delete process.env.LIFECYCLE_OUTPUT;
   }
 });

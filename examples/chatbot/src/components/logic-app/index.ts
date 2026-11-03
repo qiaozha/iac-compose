@@ -1,8 +1,12 @@
 import {
+  getApiConnectionStatus,
+  requireApiConnectionAuthorization,
+} from "../../runtime/services/api-connections.js";
+import {
   captureAzure,
   type Deployment,
   waitForHttp,
-} from "iac-compose";
+} from "iac-composer";
 import {
   optionalEnv,
   persistEnvironment,
@@ -15,31 +19,18 @@ import { loadLogicAppTeamsConfig } from "./config.js";
 
 export async function prepareLogicAppProvisioning(
   deployment: Deployment,
-): Promise<string> {
+): Promise<string | undefined> {
   const resourceGroup = optionalEnv("AZURE_RESOURCE_GROUP");
   const connectionName = optionalEnv("TEAMS_CONNECTION_NAME");
   if (!resourceGroup || !connectionName) {
     process.env.CREATE_TEAMS_CONNECTION ??= "true";
     return "";
   }
-  const status = (
-    await captureAzure(deployment, [
-      "resource",
-      "show",
-      "--resource-group",
-      resourceGroup,
-      "--resource-type",
-      "Microsoft.Web/connections",
-      "--name",
-      connectionName,
-      "--api-version",
-      "2016-06-01",
-      "--query",
-      "properties.statuses[0].status",
-      "--output",
-      "tsv",
-    ]).catch(() => "")
-  ).trim();
+  const status = await getApiConnectionStatus(deployment, {
+    subscriptionId: requiredEnv("AZURE_SUBSCRIPTION_ID"),
+    resourceGroup,
+    name: connectionName,
+  });
   process.env.CREATE_TEAMS_CONNECTION = status === "Connected" ? "false" : "true";
   return status;
 }
@@ -265,37 +256,11 @@ async function requireTeamsConnectionConsent(
   teamsTenantId: string,
 ): Promise<void> {
   const connectionName = requiredEnv("TEAMS_CONNECTION_NAME");
-  const status = (
-    await captureAzure(deployment, [
-      "resource",
-      "show",
-      "--subscription",
-      subscription,
-      "--resource-group",
-      resourceGroup,
-      "--resource-type",
-      "Microsoft.Web/connections",
-      "--name",
-      connectionName,
-      "--api-version",
-      "2016-06-01",
-      "--query",
-      "properties.statuses[0].status",
-      "--output",
-      "tsv",
-    ]).catch(() => "")
-  ).trim();
-  if (status === "Connected") return;
-
-  const resourceId =
-    `/subscriptions/${subscription}/resourceGroups/${resourceGroup}` +
-    `/providers/Microsoft.Web/connections/${connectionName}`;
-  const portalUrl =
-    `https://portal.azure.com/#@${azureTenantId}/resource${resourceId}/edit`;
-  throw new Error(
-    `Teams API connection '${connectionName}' requires interactive OAuth consent ` +
-      `(current status: '${status || "NotConnected"}'). Open ${portalUrl}, authorize the ` +
-      `connection with an account from Teams tenant '${teamsTenantId}', then rerun ` +
-      "iac-compose; completed lifecycle steps are idempotent.",
-  );
+  await requireApiConnectionAuthorization(deployment, {
+    subscriptionId: subscription,
+    resourceGroup,
+    name: connectionName,
+    portalTenantId: azureTenantId,
+    authorizationTenantId: teamsTenantId,
+  });
 }

@@ -3,7 +3,11 @@ import { resolve } from "node:path";
 
 import type { Deployment } from "./index.js";
 
-export const iacComposeAzdTemplate = "iac-compose@1.0.0";
+export const iacComposerAzdTemplate = "iac-composer@1.0.0";
+
+export function isIacComposerAzdTemplate(template: unknown): boolean {
+  return template === iacComposerAzdTemplate || template === "iac-compose@1.0.0";
+}
 
 export type AzdEnvironmentValues = Readonly<
   Record<string, string | undefined>
@@ -137,9 +141,16 @@ export class AzdProject {
           this.#options.manifest,
         )
       : this.#options.manifest;
+    const metadata = asRecord(manifest.metadata);
+    const migratedManifest = metadata?.template === "iac-compose@1.0.0"
+      ? {
+          ...manifest,
+          metadata: { ...metadata, template: iacComposerAzdTemplate },
+        }
+      : manifest;
     await writeFile(
       resolve(this.directory, "azure.yaml"),
-      `${JSON.stringify(manifest, null, 2)}\n`,
+      `${JSON.stringify(migratedManifest, null, 2)}\n`,
       { mode: 0o600 },
     );
 
@@ -180,7 +191,7 @@ export class AzdProject {
     if (Object.keys(values).length === 0) return;
     const valuesFile = resolve(
       this.directory,
-      `.iac-compose-env-${process.pid}-${Date.now()}`,
+      `.iac-composer-env-${process.pid}-${Date.now()}`,
     );
     if (!this.#deployment.dryRun) {
       await writeFile(valuesFile, serializeAzdEnvironment(values), {
@@ -301,7 +312,7 @@ async function rejectLegacyAzdProject(directory: string): Promise<void> {
     await access(legacyMarker);
     throw new Error(
       `Legacy deploy-js generated project detected at '${directory}'. ` +
-        "Remove the generated project directory and rerun iac-compose.",
+        "Remove the generated project directory and rerun iac-composer.",
     );
   } catch (error) {
     if (!isNodeError(error) || error.code !== "ENOENT") throw error;
@@ -322,7 +333,7 @@ async function rejectLegacyAzdProject(directory: string): Promise<void> {
   ) {
     throw new Error(
       `Legacy imperative-deploy generated project detected at '${directory}'. ` +
-        "Remove the generated project directory and rerun iac-compose.",
+        "Remove the generated project directory and rerun iac-composer.",
     );
   }
 }

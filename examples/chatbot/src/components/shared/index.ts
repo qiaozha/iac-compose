@@ -2,7 +2,7 @@ import {
   ensureResourceGroup,
   type Deployment,
   type ProvisionOutputs,
-} from "iac-compose";
+} from "iac-composer";
 import { persistEnvironment, requiredEnv } from "../../runtime/environment.js";
 import { ensureServerApplication } from "./identity.js";
 import {

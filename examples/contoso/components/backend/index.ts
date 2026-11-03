@@ -6,7 +6,7 @@ import {
   prepareAppServiceContainer,
   type Deployment,
   waitForAppServiceReady,
-} from "iac-compose";
+} from "iac-composer";
 import {
   persistEnvironment,
   requiredEnv,

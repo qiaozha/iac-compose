@@ -9,7 +9,7 @@ export function initialize(data) {
   runtimeUrl = data.runtimeUrl;
 }
 export function resolve(specifier, context, nextResolve) {
-  if (specifier === "iac-compose") {
+  if (specifier === "iac-composer") {
     return { url: runtimeUrl, shortCircuit: true };
   }
   return nextResolve(specifier, context);

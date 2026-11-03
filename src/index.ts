@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, rmdir, writeFile } from "node:fs/promises";
 import {
   basename,
   dirname,
@@ -10,24 +10,13 @@ import {
 } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
-import { getAzdProject, iacComposeAzdTemplate } from "./azd.js";
+import { getAzdProject, iacComposerAzdTemplate } from "./azd.js";
 import { importTypeScript } from "./typescript-loader.js";
 
 export {
-  fetchAzureArchitectureCatalog,
-  extractOfficialImplementationUrls,
-  parseAzureArchitectureSource,
-  writeAzureArchitectureCatalog,
-  type ArchitectureImplementationMode,
-  type ArchitectureImplementationRoute,
-  type AzureArchitectureCatalog,
-  type AzureArchitectureCatalogEntry,
-  type FetchArchitectureCatalogOptions,
-} from "./architecture-catalog.js";
-export {
   AzdProject,
   createAzdProject,
-  iacComposeAzdTemplate,
+  iacComposerAzdTemplate,
   getAzdProject,
   parseAzdEnvironment,
   type AzdDeployOptions,
@@ -77,52 +66,6 @@ export {
   stringEnvironment,
   type EnvironmentValues,
 } from "./environment.js";
-export {
-  generateDeploymentCode,
-  loadResourceRequirements,
-  type DeploymentCodeGenerationProgress,
-  type DeploymentSolution,
-  type GenerateDeploymentCodeOptions,
-  type GenerateDeploymentCodeResult,
-  type ResourceRequirement,
-  type ResourceRequirements,
-} from "./generator.js";
-export {
-  ensureDeploymentPrincipalRoles,
-  planResourceValidation,
-  validateResourceRequirements,
-  type DeploymentRoleRequirement,
-  type DeploymentRoleValidation,
-  type ResourceProviderValidation,
-  type ResourceRequirementsValidationResult,
-  type ResourceValidationPlan,
-  type ValidateResourceRequirementsOptions,
-} from "./validation/resources/index.js";
-export {
-  renderResourceRequirements,
-  type RenderedProvisioningFile,
-  type RenderResourceRequirementsOptions,
-  type ResourceContract,
-  type ResourceContractRequirement,
-} from "./generation/resources/index.js";
-export {
-  createHostedAgentManifest,
-  deployHostedAgentService,
-  deployResourceComponent,
-  enableWorkflowDeployment,
-  parseHostedAgentVersion,
-  prepareAuthorizedConnection,
-  prepareResourceRequirements,
-  provisionTeamsApplication,
-  resolveOutputBindings,
-  teamsEnvironmentName,
-  type DeployResourceComponentOptions,
-  type AuthorizedConnectionOptions,
-  type HostedAgentAccess,
-  type HostedAgentDeploymentOptions,
-  type TeamsApplicationDeploymentOptions,
-  type WorkflowDeploymentOptions,
-} from "./runtime/resources/index.js";
 
 export interface Command {
   command: string;
@@ -229,7 +172,7 @@ export class Deployment {
         this.projectDirectory,
         options.layer?.outputDirectory ??
           options.outputDirectory ??
-          ".iac-compose/infra",
+          await defaultProvisioningDirectory(this.projectDirectory),
       );
       const layer = inferLayerName(outputDirectory);
       const azdProjectDirectory = layer ? dirname(outputDirectory) : outputDirectory;
@@ -298,6 +241,9 @@ export class Deployment {
               recursive: true,
               force: true,
             });
+        await rm(resolve(azdProjectDirectory, ".iac-composer-project.json"), {
+          force: true,
+        });
         await rm(resolve(azdProjectDirectory, ".iac-compose-project.json"), {
           force: true,
         });
@@ -309,7 +255,7 @@ export class Deployment {
           name: sanitizeAzdName(
             options.deploymentName ?? basename(outputDirectory),
           ),
-          ...(layer ? { metadata: { template: iacComposeAzdTemplate } } : {}),
+          ...(layer ? { metadata: { template: iacComposerAzdTemplate } } : {}),
           ...(layer ? { requiredVersions: { azd: ">= 1.30.0" } } : {}),
           infra,
         },
@@ -337,13 +283,13 @@ export class Deployment {
   }
 
   async execute(command: Command): Promise<void> {
-    this.#log(`[iac-compose] $ ${formatCommand(command.command, command.args ?? [])}`);
+    this.#log(`[iac-composer] $ ${formatCommand(command.command, command.args ?? [])}`);
     if (this.dryRun) return;
     await this.#execute(command, false, false);
   }
 
   async capture(command: Command): Promise<string> {
-    this.#log(`[iac-compose] $ ${formatCommand(command.command, command.args ?? [])}`);
+    this.#log(`[iac-composer] $ ${formatCommand(command.command, command.args ?? [])}`);
     if (this.dryRun) return "";
     return this.#execute(command, true, false);
   }
@@ -368,15 +314,15 @@ export class Deployment {
     action: () => Promise<void>,
     runInDryRun = false,
   ): Promise<void> {
-    this.#log(`[iac-compose] ${this.dryRun ? "DRY" : "RUN"} ${kind}: ${name}`);
+    this.#log(`[iac-composer] ${this.dryRun ? "DRY" : "RUN"} ${kind}: ${name}`);
     if (this.dryRun && !runInDryRun) return;
     await action();
-    if (!this.dryRun) this.#log(`[iac-compose] DONE ${kind}: ${name}`);
+    if (!this.dryRun) this.#log(`[iac-composer] DONE ${kind}: ${name}`);
   }
 
   async #execute(command: Command, capture = false, log = true): Promise<string> {
     const args = [...(command.args ?? [])];
-    if (log) this.#log(`[iac-compose] $ ${formatCommand(command.command, args)}`);
+    if (log) this.#log(`[iac-composer] $ ${formatCommand(command.command, args)}`);
 
     return new Promise((resolvePromise, reject) => {
       const child = spawn(command.command, args, {
@@ -467,10 +413,18 @@ async function installRenderedFiles(
   await rejectLegacyGeneratedManifest(
     resolve(generatedFilesRoot, ".deploy-js-generated.json"),
   );
-  const manifestPath = resolve(generatedFilesRoot, ".iac-compose-generated.json");
-  const generatedPaths = new Set(await readGeneratedManifest(manifestPath));
+  const manifestPath = resolve(generatedFilesRoot, ".iac-composer-generated.json");
+  const previousManifestPath = resolve(generatedFilesRoot, ".iac-compose-generated.json");
+  const generatedPaths = new Set([
+    ...(await readGeneratedManifest(previousManifestPath)),
+    ...(await readGeneratedManifest(manifestPath)),
+  ]);
+  let migratedLayerManifests: string[] = [];
   if (generatedFilesRoot !== outputDirectory) {
-    await migrateLayerGeneratedManifests(generatedFilesRoot, generatedPaths);
+    migratedLayerManifests = await migrateLayerGeneratedManifests(
+      generatedFilesRoot,
+      generatedPaths,
+    );
   }
 
   const outputPrefix = relativeGeneratedPath(generatedFilesRoot, outputDirectory);
@@ -499,20 +453,31 @@ async function installRenderedFiles(
     manifestPath,
     `${JSON.stringify([...generatedPaths].sort(), null, 2)}\n`,
   );
+  await Promise.all(
+    [previousManifestPath, ...migratedLayerManifests].map((path) =>
+      rm(path, { force: true }),
+    ),
+  );
 }
 
 async function migrateLayerGeneratedManifests(
   generatedFilesRoot: string,
   generatedPaths: Set<string>,
-): Promise<void> {
+): Promise<string[]> {
+  const migratedManifests: string[] = [];
   for (const entry of await readdir(generatedFilesRoot, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const layerDirectory = resolve(generatedFilesRoot, entry.name);
     await rejectLegacyGeneratedManifest(
       resolve(layerDirectory, ".deploy-js-generated.json"),
     );
-    const manifestPath = resolve(layerDirectory, ".iac-compose-generated.json");
-    for (const generatedPath of await readGeneratedManifest(manifestPath)) {
+    const manifestPath = resolve(layerDirectory, ".iac-composer-generated.json");
+    const previousManifestPath = resolve(layerDirectory, ".iac-compose-generated.json");
+    const layerPaths = [
+      ...(await readGeneratedManifest(previousManifestPath)),
+      ...(await readGeneratedManifest(manifestPath)),
+    ];
+    for (const generatedPath of layerPaths) {
       generatedPaths.add(
         relativeGeneratedPath(
           generatedFilesRoot,
@@ -520,8 +485,36 @@ async function migrateLayerGeneratedManifests(
         ),
       );
     }
-    await rm(manifestPath, { force: true });
+    migratedManifests.push(previousManifestPath, manifestPath);
   }
+  return migratedManifests;
+}
+
+async function defaultProvisioningDirectory(projectDirectory: string): Promise<string> {
+  const previousRoot = resolve(projectDirectory, ".iac-compose");
+  const previous = resolve(previousRoot, "infra");
+  const current = resolve(projectDirectory, ".iac-composer", "infra");
+  try {
+    await readdir(previous);
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return current;
+    throw error;
+  }
+  try {
+    await readdir(current);
+    throw new Error(
+      "Both .iac-compose/infra and .iac-composer/infra exist. " +
+        "Specify outputDirectory explicitly to select the provisioning state.",
+    );
+  } catch (error) {
+    if (!isNodeError(error) || error.code !== "ENOENT") throw error;
+  }
+  await mkdir(dirname(current), { recursive: true });
+  await rename(previous, current);
+  if ((await readdir(previousRoot)).length === 0) {
+    await rmdir(previousRoot);
+  }
+  return current;
 }
 
 async function rejectLegacyGeneratedManifest(path: string): Promise<void> {
@@ -533,7 +526,7 @@ async function rejectLegacyGeneratedManifest(path: string): Promise<void> {
   }
   throw new Error(
     `Legacy deploy-js generated output detected at '${path}'. ` +
-      "Remove the generated output directory and rerun iac-compose.",
+      "Remove the generated output directory and rerun iac-composer.",
   );
 }
 
@@ -668,7 +661,7 @@ function sanitizeAzdName(value: string): string {
     .replace(/[^a-z0-9-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 63);
-  return sanitized || "iac-compose";
+  return sanitized || "iac-composer";
 }
 
 function formatCommand(command: string, args: readonly string[]): string {

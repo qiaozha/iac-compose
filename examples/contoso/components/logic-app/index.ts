@@ -1,8 +1,8 @@
+import { enableWorkflowDeployment } from "../../runtime/services/workflows.js";
+import { prepareAuthorizedConnection } from "../../runtime/services/connections.js";
 import {
-  enableWorkflowDeployment,
-  prepareAuthorizedConnection,
   type Deployment,
-} from "iac-compose";
+} from "iac-composer";
 import {
   persistEnvironment,
   requiredEnv,

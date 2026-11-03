@@ -4,46 +4,32 @@ import { resolve } from "node:path";
 import { test } from "node:test";
 
 import {
-  createAgentAzdManifest,
-  parseAgentVersion,
+  createAgentServiceConfiguration,
 } from "../examples/chatbot/src/components/agent/index.js";
 
-test("hosted agent manifest lets azd build and deploy the container source", () => {
-  const manifest = createAgentAzdManifest({
-    dockerfile: "/workspace/agent/agents/chat_agent/Dockerfile",
-    context: "/workspace/agent",
+test("chatbot supplies its runtime configuration to its application-owned agent lifecycle", () => {
+  const configuration = createAgentServiceConfiguration({
     registry: "registry.example",
     tag: "dev",
+    appConfigurationEndpoint: "https://customer-config.azconfig.io",
   });
-  assert.deepEqual(manifest, {
-    name: "chatbot-agent",
-    services: {
-      agent: {
-        project: ".",
-        host: "azure.ai.agent",
-        language: "python",
-        docker: {
-          path: "/workspace/agent/agents/chat_agent/Dockerfile",
-          context: "/workspace/agent",
-          registry: "registry.example",
-          image: "azure-sdk-chat-agent",
-          tag: "dev",
-          remoteBuild: true,
-        },
-        kind: "hosted",
-        name: "azure-sdk-chat-agent",
-        description: "Azure SDK Q&A hosted agent",
-        protocols: [{ protocol: "responses", version: "2.0.0" }],
-        config: { container: { resources: { cpu: "0.5", memory: "1Gi" } } },
-        container: { resources: { cpu: "0.5", memory: "1Gi" } },
-        startupCommand: "python init.py",
-        env: {
-          AZURE_APPCONFIG_ENDPOINT: "${AZURE_APPCONFIG_ENDPOINT}",
-        },
-      },
-    },
+  assert.deepEqual(configuration.docker, {
+    path: "agents/chat_agent/Dockerfile",
+    context: ".",
+    registry: "registry.example",
+    image: "azure-sdk-chat-agent",
+    tag: "dev",
+    remoteBuild: true,
   });
-  assert.equal("hooks" in manifest, false);
+  assert.equal(configuration.language, "python");
+  assert.equal(configuration.name, "azure-sdk-chat-agent");
+  assert.equal(configuration.description, "Azure SDK Q&A hosted agent");
+  assert.equal(configuration.startupCommand, "python init.py");
+  assert.deepEqual(configuration.container, { cpu: "0.5", memory: "1Gi" });
+  assert.deepEqual(configuration.protocols, [{ protocol: "responses", version: "2.0.0" }]);
+  assert.deepEqual(configuration.environment, {
+    AZURE_APPCONFIG_ENDPOINT: "https://customer-config.azconfig.io",
+  });
 });
 
 test("hosted agent delegates its source build to azd deploy", async () => {
@@ -51,7 +37,9 @@ test("hosted agent delegates its source build to azd deploy", async () => {
     resolve("examples/chatbot/src/components/agent/index.ts"),
     "utf8",
   );
-  assert.match(source, /project\.deploy\("agent"\)/);
+  assert.match(source, /deployHostedAgentService\(deployment/);
+  assert.match(source, /provision: \{\s*layer: generatedAgentLayer/);
+  assert.match(source, /configuration: async \(outputs\)/);
   assert.doesNotMatch(source, /buildContainerImage|fromPackage|--from-package/);
 });
 
@@ -64,27 +52,4 @@ test("agent grants the server identity Foundry runtime access", async () => {
   assert.match(source, /requiredEnv\("MANAGED_IDENTITY_PRINCIPAL_ID"\)/);
   assert.match(source, /ensureAgentServerFoundryAccess\(deployment\)/);
   assert.match(source, /ensureRoleAssignment/);
-});
-
-test("agent status parser preserves the azd show identity contract", () => {
-  assert.deepEqual(
-    parseAgentVersion(
-      JSON.stringify({
-        name: "azure-sdk-chat-agent",
-        version: "7",
-        status: "active",
-        instance_identity: { principal_id: "principal-id" },
-      }),
-    ),
-    {
-      name: "azure-sdk-chat-agent",
-      version: "7",
-      status: "active",
-      instance_identity: { principal_id: "principal-id" },
-    },
-  );
-  assert.throws(
-    () => parseAgentVersion('{"name":"agent"}'),
-    /invalid agent version/,
-  );
 });

@@ -76,7 +76,7 @@ const components: ReadonlyArray<{
   },
 ];
 
-test("each component owns a direct provisioning lifecycle call", async () => {
+test("each component owns its provisioning directly or through its service lifecycle", async () => {
   for (const component of components) {
     const source = await readFile(
       resolve(
@@ -86,7 +86,12 @@ test("each component owns a direct provisioning lifecycle call", async () => {
       ),
       "utf8",
     );
-    assert.match(source, /deployment\.provision\(/, component.name);
+    if (component.name === "agent") {
+      assert.match(source, /deployHostedAgentService\(deployment/, component.name);
+      assert.match(source, /provision: \{\s*layer: generatedAgentLayer/, component.name);
+    } else {
+      assert.match(source, /deployment\.provision\(/, component.name);
+    }
   }
 });
 
@@ -268,17 +273,17 @@ test("chatbot installs provisioning libraries from GitHub release assets", async
   }
 });
 
-test("chatbot imports iac-compose directly through its local package", async () => {
+test("chatbot imports iac-composer directly through its local package", async () => {
   const packageJson = JSON.parse(
     await readFile(resolve("examples/chatbot/package.json"), "utf8"),
   ) as { dependencies?: Record<string, string> };
-  assert.equal(packageJson.dependencies?.["iac-compose"], "file:../..");
+  assert.equal(packageJson.dependencies?.["iac-composer"], "file:../..");
 
   const files = await collectTypeScriptFiles(resolve("examples/chatbot/src"));
   const source = (
     await Promise.all(files.map((file) => readFile(file, "utf8")))
   ).join("\n");
-  assert.match(source, /from ["']iac-compose["']/);
+  assert.match(source, /from ["']iac-composer["']/);
   assert.doesNotMatch(source, /from ["'][^"']*deployment\.js["']/);
   assert.doesNotMatch(source, /\.\.\/\.\.\/\.\.\/src/);
   await assert.rejects(

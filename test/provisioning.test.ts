@@ -5,10 +5,9 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { copyProvisioningArtifacts } from "../src/index.js";
-import { installGeneratedFiles } from "../src/generation/output/generated-files.js";
 
 test("generated provisioning replaces stale artifacts and preserves owned files", async () => {
-  const root = await mkdtemp(join(tmpdir(), "iac-compose-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-composer-"));
   const artifacts = join(root, "artifacts");
   const output = join(root, "infra");
   await mkdir(artifacts, { recursive: true });
@@ -24,22 +23,8 @@ test("generated provisioning replaces stale artifacts and preserves owned files"
   assert.equal(await readFile(join(output, "environment.yaml"), "utf8"), "owned");
 });
 
-test("code generation rejects legacy deploy-js ownership state", async () => {
-  const output = await mkdtemp(join(tmpdir(), "iac-compose-codegen-legacy-"));
-  await writeFile(
-    join(output, ".deploy-js-codegen.json"),
-    `${JSON.stringify({ version: 1, files: ["stale.ts"] })}\n`,
-  );
-
-  await assert.rejects(
-    installGeneratedFiles(output, new Map([["deploy.ts", "export {};\n"]])),
-    /Legacy deploy-js generated output/,
-  );
-  await assert.rejects(access(join(output, "deploy.ts")), { code: "ENOENT" });
-});
-
 test("provisioning rejects legacy deploy-js ownership state", async () => {
-  const root = await mkdtemp(join(tmpdir(), "iac-compose-provision-legacy-"));
+  const root = await mkdtemp(join(tmpdir(), "iac-composer-provision-legacy-"));
   const artifacts = join(root, "artifacts");
   const output = join(root, "infra");
   await mkdir(artifacts, { recursive: true });
@@ -52,7 +37,7 @@ test("provisioning rejects legacy deploy-js ownership state", async () => {
     /Legacy deploy-js generated output/,
   );
   await assert.rejects(
-    access(join(output, ".iac-compose-generated.json")),
+    access(join(output, ".iac-composer-generated.json")),
     { code: "ENOENT" },
   );
 });

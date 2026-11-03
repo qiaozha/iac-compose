@@ -2,7 +2,7 @@ import {
   captureAzureJson,
   runAzure,
   type Deployment,
-} from "iac-compose";
+} from "iac-composer";
 import { persistEnvironment, requiredEnv } from "../../runtime/environment.js";
 import {
   generatedIdentityBootstrapLayer,
