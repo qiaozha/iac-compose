@@ -89,6 +89,9 @@ libraries. For a complete example, see the chatbot's
 [TypeScript provisioning stack](examples/chatbot/src/components/shared/provisioning.ts)
 and [deployment program](examples/chatbot/src/deploy.ts).
 
+For a Foundry account, project, and model deployment in an existing resource group, see the
+[Foundry TypeScript example](examples/foundry/README.md).
+
 When needed, add application deployment or configuration actions with
 `deployment.deploy` after their infrastructure prerequisites. `AzdProject`
 supports `azd deploy` service targets while your TypeScript program retains
