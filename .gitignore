@@ -4,3 +4,4 @@ node_modules/
 .iac-compose-generated.json
 examples/chatbot/.generated/
 examples/contoso/.generated/
+examples/foundry/.generated/
