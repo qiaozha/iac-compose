@@ -1,7 +1,17 @@
 # Direct TypeScript authoring
 
-Use this workflow for custom infrastructure, existing Azure provisioning
-library code, or deployment programs that need precise lifecycle control.
+Use this workflow to implement Azure resource requirements as TypeScript with
+the Azure JavaScript provisioning libraries and `iac-composer`. It works with
+requirements from any planner or the user; no planner-specific contract is
+needed. Use SDK resource references for dependencies and runtime helpers for
+ordered provisioning, application configuration, readiness, and deployment.
+
+Use the installed SDK declarations rather than Azure management-SDK request
+shapes or guessed properties. `iac_composer_get_reference` can look up a
+provisioning type or an `iac-composer` helper without executing either package.
+Handwritten Bicep and resource-creation CLI scripts are not the default authored
+representation; generated Bicep and azd/CLI execution remain implementation
+details. Make any unsupported-resource fallback explicit.
 
 ## Recommended layout
 
@@ -116,10 +126,10 @@ const storage = new StorageAccount(stack, {
   sku: { name: "Standard_LRS" },
   properties: {
     minimumTlsVersion: "TLS1_2",
-    allowBlobPublicAccess: false,
+    AllowBlobPublicAccess: false,
     allowSharedKeyAccess: false,
-    supportsHttpsTrafficOnly: true,
-  } as any,
+    EnableHttpsTrafficOnly: true,
+  },
 });
 
 stack.outputs.add("STORAGE_ACCOUNT_NAME", "string", storage.name);
@@ -145,6 +155,10 @@ export const outputBicep = [
 
 Use the provisioning packages and versions already selected by the target
 repository. Add only the resource-specific packages that the entrypoint imports.
+SDK input names can differ from ARM property names: in version 0.1,
+`AllowBlobPublicAccess` and `EnableHttpsTrafficOnly` render as
+`allowBlobPublicAccess` and `supportsHttpsTrafficOnly`. Inspect installed types
+instead of suppressing mismatches with a broad cast.
 If a provisioning SDK type is temporarily incomplete, keep any type escape as
 narrow as possible around that SDK object.
 

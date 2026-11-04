@@ -1,0 +1,8 @@
+{
+  "command": "node",
+  "args": [
+    "/REPLACE/IAC_COMPOSER_ROOT/dist/mcp/cli.js",
+    "--workspace",
+    "/REPLACE/WORKSPACE_ROOT"
+  ]
+}

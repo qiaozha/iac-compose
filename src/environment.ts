@@ -1,5 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { IacComposerError } from "./diagnostics.js";
 
 export type EnvironmentValues = Record<string, string>;
 
@@ -9,7 +10,14 @@ export function requiredEnv(
 ): string {
   const value = environment[name]?.trim();
   if (!value || value.startsWith("REPLACE_WITH_")) {
-    throw new Error(`Required deployment value '${name}' is not configured.`);
+    throw new IacComposerError({
+      code: "ENVIRONMENT_VALUE_REQUIRED",
+      category: "configuration",
+      message: `Required deployment value '${name}' is not configured.`,
+      property: name,
+      expected: "A non-empty value that does not start with REPLACE_WITH_.",
+      repair: `Configure '${name}' in the deployment environment or approved secret store.`,
+    });
   }
   return value;
 }

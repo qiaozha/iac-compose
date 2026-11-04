@@ -26,6 +26,10 @@ const providerNamespacesByKind: Readonly<Record<string, readonly string[]>> = {
   "workflow-host": ["Microsoft.Logic"],
 };
 
+export function supportedResourceKinds(): readonly string[] {
+  return Object.keys(providerNamespacesByKind).sort();
+}
+
 const appConfigurationDataOwner: DeploymentRoleRequirement = {
   provider: "Microsoft.AppConfiguration",
   role: "App Configuration Data Owner",

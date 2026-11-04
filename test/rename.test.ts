@@ -13,7 +13,10 @@ import {
 test("package, CLI script, import resolution and skill use iac-composer", async () => {
   const manifest = JSON.parse(await readFile("package.json", "utf8"));
   assert.equal(manifest.name, "iac-composer");
-  assert.deepEqual(manifest.bin, { "iac-composer": "dist/cli.js" });
+  assert.deepEqual(manifest.bin, {
+    "iac-composer": "dist/cli.js",
+    "iac-composer-mcp": "dist/mcp/cli.js",
+  });
   assert.equal(manifest.scripts["iac-composer"], "tsx src/cli.ts");
   assert.equal(Object.hasOwn(manifest.scripts, "iac-compose"), false);
   assert.match(

@@ -1,3 +1,4 @@
+import { IacComposerError } from "iac-composer";
 import {
   asRecord,
   componentPathImports,
@@ -29,9 +30,15 @@ export function renderContainerComponentSource(
       candidate.requiredBy.includes(component),
   );
   if (containers.length !== 1) {
-    throw new Error(
-      `Component '${component}' requires exactly one container-host resource; found ${containers.length}.`,
-    );
+    throw new IacComposerError({
+      code: "COMPONENT_CONTAINER_REQUIRED",
+      category: "configuration",
+      message: `Component '${component}' requires exactly one container-host resource; found ${containers.length}.`,
+      target: component,
+      property: "resources",
+      expected: "Exactly one container-host for an ordinary generated application component.",
+      repair: "Preserve the selected resource plan. Use direct iac-composer authoring for infrastructure-only components; do not invent an application host to satisfy generation.",
+    });
   }
   const resource = containers[0]!;
   const configuration = asRecord(resource.configuration);

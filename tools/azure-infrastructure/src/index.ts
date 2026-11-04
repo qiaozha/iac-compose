@@ -44,3 +44,10 @@ export {
   resolveOutputBindings,
   type DeployResourceComponentOptions,
 } from "./runtime/resources/index.js";
+export {
+  getAzureInfrastructureContext,
+  azureInfrastructureRouting,
+  contextTopics,
+  type InfrastructureContext,
+  type InfrastructureContextTopic,
+} from "./agent-context.js";

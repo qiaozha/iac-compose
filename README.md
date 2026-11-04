@@ -97,16 +97,39 @@ When needed, add application deployment or configuration actions with
 supports `azd deploy` service targets while your TypeScript program retains
 lifecycle ordering.
 
-## Agent skill
+## Agent discovery and workspace opt-in
 
-The [iac-composer skill](.github/skills/iac-composer/SKILL.md) covers direct IaC
-composition, output wiring, dry runs, and ordered deployment execution.
-Install it with GitHub CLI 2.90.0 or newer:
+The [iac-composer skill](.github/skills/iac-composer/SKILL.md) makes the
+implementation choice discoverable: **TypeScript resources using the Azure
+JavaScript provisioning libraries, composed and provisioned with iac-composer**.
+Requirements can come from the user or any planning skill/tool. A specific
+recognition package, generator or JSON contract is not required.
+
+Use the [root-owned workspace setup guide](agent-setup/README.md) for a pinned
+skill install, conditional implementation preference and Copilot/Claude/Codex
+profiles. With GitHub CLI 2.97 or newer, run from the consumer repository:
 
 ```bash
-gh skill preview qiaozha/iac-compose iac-composer --allow-hidden-dirs
-gh skill install qiaozha/iac-compose iac-composer --allow-hidden-dirs
+gh skill install qiaozha/iac-composer iac-composer \
+  --agent codex --scope project --pin <REVIEWED_REF> --allow-hidden-dirs
 ```
+
+This uses the common `.agents/skills` project location supported by Copilot and
+Codex. The same runtime package owns the `iac-composer-mcp` binary and its
+read-only `iac_composer_get_context` and `iac_composer_get_reference` tools.
+They expose SDK Stack/resource authoring, actual installed TypeScript
+declarations, lifecycle helpers and validation/provision/deploy capabilities.
+The agent authors TypeScript directly and uses the existing runtime CLI for
+trusted preview and explicitly authorized execution.
+
+The separate [azure-infrastructure tool](tools/azure-infrastructure/README.md)
+is an optional upstream planner/contract generator, not the implementation
+front door or a dependency of this setup.
+
+An npm dependency or the CLI `describe` command alone cannot make an unknown
+tool appear in an agent's initial inventory. Workspace opt-in advertises the
+workflow; it does not guarantee model selection, override explicit tool choices
+or existing IaC, or authorize cloud changes.
 
 ## Commands
 
@@ -116,6 +139,81 @@ npm run build
 npm run iac-composer -- ./deployment.ts --environment dev
 npm run iac-composer -- ./deployment.ts --environment dev --dry-run
 ```
+
+## Machine-readable agent interface
+
+Discover the runtime without importing or executing a deployment program:
+
+```bash
+iac-composer describe --json
+iac-composer describe commands --json
+iac-composer describe provisioning --json
+iac-composer describe report --json
+```
+
+These focused, versioned JSON descriptions expose command options, defaults,
+side effects, provisioning source constraints, the `outputBicep` JSON Schema,
+the report JSON Schema, and runtime limitations. Resource selection can come
+from any planning workflow; provider/access validation is separate. The runtime
+does not impose a logical resource catalog or generator schema. The MCP
+reference tool queries installed `@azure/provisioning-*` declarations rather
+than guessing resource properties or management-SDK request shapes.
+
+Library callers can use `describeRuntimeCapabilities(topic)`,
+`getIacComposerContext(topic)` and `getTypeScriptReference(options)` without
+spawning a CLI. SDK lookup requires a workspace and reads metadata/declarations
+only; it does not import SDK code, install libraries or provision resources.
+
+Keep human logs and arbitrary program output separate from machine results:
+
+```bash
+iac-composer ./deployment.ts --environment dev --dry-run --report preview.json
+```
+
+`--report <path>` writes a schema-version `1.0` JSON object with `status`,
+`dryRun`, ordered `steps`, artifact locations and layer dependencies, and
+`diagnostics`. It works with deployment execution and guarded `down` as well.
+The report's parent directory must exist. The destination is overwritten and
+initialized with `status: "running"` before authored code is loaded; an
+unwritable destination fails before execution. Normal completion or a handled
+failure atomically replaces the report using a temporary file with owner-only
+permissions. Exit codes remain 0 for success and 1 for
+failure. Invalid `--report` syntax or an unwritable destination cannot produce a
+report. A killed process may leave a running report or a temporary file.
+
+Known diagnostics include a stable `code`, `category`, `message`, `repair`, and
+where applicable `target`, `property`, `expected`, or command `exitCode`/`signal`.
+For example:
+
+```json
+{
+  "code": "OPTION_VALUE_REQUIRED",
+  "category": "usage",
+  "message": "--component requires a value.",
+  "property": "--component",
+  "repair": "Supply a non-empty value immediately after --component."
+}
+```
+
+Reports do not collect command arguments, environment values, outputs, generated
+source, or raw provider errors. Do not put secrets in authored step labels or
+paths, which are included. Unknown authored/provider errors have code
+`PROGRAM_FAILED`; inspect stderr for the original details. Ordinary human logs
+retain their existing behavior and are not a secret-redaction boundary.
+
+`previewed` provisioning steps mean local compilation completed, not that Bicep
+or Azure accepted the infrastructure. Wrapped application actions are `skipped`.
+Dry runs execute authored modules and custom compilers and write local files;
+they are **not a sandbox**, a Bicep semantic check, or an Azure what-if. Provision
+outputs are `{}` during preview, and `deployment.env` mutations are skipped.
+Only run trusted programs, keep side effects inside deployment actions, and run
+your project's typecheck and appropriate Bicep/provider checks separately.
+
+Reports always declare `retrySafety: "unknown"`: completed imperative actions
+are not rolled back and arbitrary program retries are not automatically safe.
+Use step status and artifact locations to inspect state before retrying.
+Library callers can supply `createDeployment({ onEvent(event) { ... } })` to
+observe the same typed step and artifact events, including child contexts.
 
 ## Deployment lifecycle
 
@@ -182,6 +280,16 @@ await deployment.provision("resources", {
   location: process.env.AZURE_LOCATION,
 });
 ```
+
+Choose exactly one provisioning source: `layer`, `entrypoint`, or a `compiler`
+with `artifactsDirectory`. Source conflicts are rejected before compiler
+execution. Provisioning checks that the selected template and parameters files
+were emitted (defaults: `main.bicep` and `main.bicepparam`). Artifact paths must
+be non-empty, relative, unique after normalization, and contained in the output
+directory, with no file/directory conflicts. These checks happen before replacing
+previous artifacts, so invalid rendered output does not erase the last valid
+layer. This is input preflight, not a fully transactional file installation:
+filesystem failures during writing can still require regeneration.
 
 The runtime records all layered artifact paths in the single
 `.generated/.iac-composer-generated.json` manifest and only replaces files under
