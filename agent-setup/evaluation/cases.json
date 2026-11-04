@@ -1,0 +1,110 @@
+{
+  "schemaVersion": "1.0",
+  "cases": [
+    {
+      "id": "generic-api",
+      "prompt": "Create Azure infrastructure for this API with durable document storage.",
+      "fixture": "Existing API and Azure resource requirements supplied by another planning skill; only the runtime skill/MCP is installed.",
+      "expectedRoute": "typescript-implementation",
+      "mayGenerate": true
+    },
+    {
+      "id": "generic-resources",
+      "prompt": "Set up Azure resources for this application.",
+      "fixture": "User-specified Azure resources; no IaC convention or planner-specific contract.",
+      "expectedRoute": "typescript-implementation",
+      "mayGenerate": true
+    },
+    {
+      "id": "hosting-request",
+      "prompt": "Host this application on Azure with managed identity and private access to its data.",
+      "fixture": "Existing application and a hosting/identity/network resource plan supplied externally; no IaC.",
+      "expectedRoute": "typescript-implementation",
+      "mayGenerate": true
+    },
+    {
+      "id": "complete-plan",
+      "prompt": "Implement the attached Azure resource plan without changing its selected services.",
+      "fixture": "A complete non-secret resource plan in prose from a different planner. No generator input JSON is supplied or required.",
+      "expectedRoute": "typescript-implementation",
+      "mayGenerate": true
+    },
+    {
+      "id": "existing-program",
+      "prompt": "Preview the existing deployment and identify the generated artifacts without changing Azure.",
+      "fixture": "Existing iac-composer deployment, provisioning source and local dependencies.",
+      "expectedRoute": "runtime",
+      "mayGenerate": true
+    },
+    {
+      "id": "plan-only",
+      "prompt": "Plan Azure infrastructure for this API. Do not generate files or deploy anything.",
+      "fixture": "Architecture selection only; no implementation request.",
+      "expectedRoute": "planning-only",
+      "mayGenerate": false
+    },
+    {
+      "id": "explicit-terraform",
+      "prompt": "Use Terraform to create Azure infrastructure for this API.",
+      "fixture": "Existing application source; no IaC files.",
+      "expectedRoute": "explicit-tool",
+      "mayGenerate": false
+    },
+    {
+      "id": "explicit-bicep",
+      "prompt": "Create the Azure infrastructure in Bicep, not TypeScript.",
+      "fixture": "Existing application source.",
+      "expectedRoute": "explicit-tool",
+      "mayGenerate": false
+    },
+    {
+      "id": "existing-azd",
+      "prompt": "Add storage to this application's Azure infrastructure.",
+      "fixture": "Existing compatible azure.yaml and maintained Bicep infrastructure.",
+      "expectedRoute": "existing-iac",
+      "mayGenerate": false
+    },
+    {
+      "id": "existing-terraform",
+      "prompt": "Add managed identity access to the Azure resources in this project.",
+      "fixture": "Existing maintained Terraform configuration.",
+      "expectedRoute": "existing-iac",
+      "mayGenerate": false
+    },
+    {
+      "id": "inventory",
+      "prompt": "List the storage accounts in my Azure subscription.",
+      "fixture": "No infrastructure creation request; prohibit real cloud access in the local evaluation.",
+      "expectedRoute": "other",
+      "mayGenerate": false
+    },
+    {
+      "id": "cost-only",
+      "prompt": "Explain why my Azure bill increased.",
+      "fixture": "No infrastructure creation request.",
+      "expectedRoute": "other",
+      "mayGenerate": false
+    },
+    {
+      "id": "production-diagnostics",
+      "prompt": "Diagnose this production application's Azure connection failures.",
+      "fixture": "Unrelated application runtime logs; no iac-composer failure or infrastructure change request.",
+      "expectedRoute": "other",
+      "mayGenerate": false
+    },
+    {
+      "id": "non-azure",
+      "prompt": "Create AWS infrastructure for this API.",
+      "fixture": "Existing application source.",
+      "expectedRoute": "other",
+      "mayGenerate": false
+    },
+    {
+      "id": "ordinary-code",
+      "prompt": "Fix the pagination bug in this API.",
+      "fixture": "Application code and tests; no infrastructure request.",
+      "expectedRoute": "other",
+      "mayGenerate": false
+    }
+  ]
+}

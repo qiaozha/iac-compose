@@ -132,10 +132,44 @@ sibling source tree. The provisioning SDK tarballs are owned and packaged here.
 
 ## Agent workflow
 
-Install the skill directory under this package's `.github/skills/` into the
-application repository's agent skill directory. Install the independent
-`iac-composer` skill when direct IaC authoring or runtime execution is needed.
-Keep authored contracts and generated TypeScript in the customer's repository.
+This is an optional architecture-recognition and contract-generation workflow.
+The primary implementation discovery surface is
+[iac-composer's own skill and MCP setup](../../agent-setup/README.md):
+TypeScript provisioning-library resource definitions, helper APIs, and ordered
+provisioning/deployment. It accepts requirements from any planner or the user
+without requiring this package or converting the plan into this generator's
+JSON formats.
+
+Use this package when its planning capabilities or contract-to-code generator
+are specifically wanted. Explicit tool choices and existing compatible IaC
+take precedence. Keep authored contracts and source in the customer's repo.
+
+The local `azure-infrastructure-mcp --workspace <consumer-repository>` stdio
+server exposes:
+
+- `azure_infrastructure_get_context`: read-only, focused intent workflow,
+  resources, schemas, direct-authoring and runtime capabilities. The `start`
+  topic explains the boundaries without loading all references or the catalog.
+- `azure_infrastructure_generate`: deterministic local generation from existing
+  resource-requirements and solution files, with workspace and file-ownership
+  safeguards. It reuses the same generator as the CLI.
+
+The server does not select services in code, execute authored modules, run
+arbitrary commands, authenticate, validate Azure permissions, provision, grant
+roles, or delete resources. It distinguishes generated source from deployment
+readiness. See [the optional MCP integration](docs/mcp.md) for registration and
+its distinction from the runtime-owned implementation tools.
+
+`getAzureInfrastructureContext(topic)` provides the same context to programmatic
+callers of this optional integration. The independent runtime owns its own
+`iac-composer-mcp` server; it does not depend on these planner/generator tools.
+Programmatic `generateDeploymentCode` callers can opt into the same
+workspace/ownership preflight with `workspaceRoot`; existing CLI defaults remain
+unchanged. Progress callbacks now identify each phase before its work, so
+validation and rendering failures are attributed to the appropriate stage.
+See the [implementation selection evaluation](../../agent-setup/evaluation/README.md)
+to test choosing TypeScript/provisioning-library authoring without this planner.
+Protocol and packaging tests alone do not prove model selection.
 
 ### Implementation contract
 

@@ -52,7 +52,7 @@ for (const template of [iacComposerAzdTemplate, "iac-compose@1.0.0"]) {
     );
     await execFileAsync(
       process.execPath,
-      [cli, "down", projectDirectory, "-e", "dev", "--force", "--purge"],
+      [cli, "down", projectDirectory, "-e", "dev", "--force", "--purge", "--report", join(root, "report.json")],
       { env: environment },
     );
 
@@ -60,6 +60,12 @@ for (const template of [iacComposerAzdTemplate, "iac-compose@1.0.0"]) {
       (await readFile(log, "utf8")).trim(),
       "down --environment dev --force --purge --no-prompt",
     );
+    const report = JSON.parse(await readFile(join(root, "report.json"), "utf8"));
+    assert.equal(report.command, "down");
+    assert.equal(report.status, "succeeded");
+    assert.equal(report.dryRun, false);
+    assert.equal(report.steps[0]?.status, "succeeded");
+    assert.equal(report.retrySafety, "unknown");
   });
 }
 

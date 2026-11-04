@@ -1,0 +1,14 @@
+{
+  "servers": {
+    "iac-composer": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "${env:IAC_COMPOSER_ROOT}/dist/mcp/cli.js",
+        "--workspace",
+        "${workspaceFolder}"
+      ],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}

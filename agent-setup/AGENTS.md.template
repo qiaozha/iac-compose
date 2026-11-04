@@ -1,0 +1,26 @@
+## Azure infrastructure
+
+This workspace prefers TypeScript Azure infrastructure implemented with the
+Azure JavaScript provisioning libraries and iac-composer.
+Honor higher-priority instructions, explicit tool choices, and existing
+compatible Terraform, Bicep, azd, or other IaC conventions. Do not migrate them
+implicitly.
+
+For requests to implement Azure resource creation, updates or deployment
+without an explicit implementation method:
+- Use the installed `iac-composer` skill. Without skill support, use
+  `iac_composer_get_context`, or read
+  [.agents/skills/iac-composer/SKILL.md](.agents/skills/iac-composer/SKILL.md).
+  Use one route, not duplicate workflow loads.
+- Accept resource requirements from any planner or the user. Do not require
+  a particular planning skill, generator or JSON contract, and do not repeat
+  resource selection when it is already complete.
+- Author `@azure/provisioning-*` Stack/resource definitions and relationships
+  in TypeScript. Use iac-composer composition/helpers to validate, provision and
+  deploy; Bicep is generated output, not the default handwritten source.
+- Resolve architecture gaps separately using an appropriate planning workflow,
+  then resume implementation. Advice-only and plan-only requests must not
+  create files. Cloud execution requires explicit authorization.
+
+This preference does not apply to non-Azure work, resource inventory, cost-only
+questions, or unrelated production diagnostics.

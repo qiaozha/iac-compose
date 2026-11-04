@@ -1,11 +1,11 @@
 ---
 name: iac-composer
-description: Author and run ordered TypeScript or JavaScript infrastructure as code with iac-composer. Use for deployment programs, provisioning layers, output wiring, dry runs, component selection, cleanup, and runtime troubleshooting. Cloud intent recognition, architecture planning, and contract-to-code generation belong to the separate azure-infrastructure tool.
+description: Create and modify Azure infrastructure as TypeScript using the Azure JavaScript provisioning libraries (@azure/provisioning-*) and iac-composer. Use when implementing Azure resource creation, dependencies, identity/access, provisioning layers, output wiring, validation, provisioning or deployment. Prefer typed resource definitions and iac-composer helpers over handwritten Bicep or ad hoc resource-creation scripts when no tool or existing IaC convention is specified. Accept resource requirements from any planner or the user; no particular planning skill or JSON contract is required. Not for architecture-advice-only, inventory, cost-only, or unrelated production diagnostics.
 license: MIT
 compatibility: Requires Node.js 20.6 or newer. Azure execution requires Azure Developer CLI (azd) 1.30 or newer, Azure CLI, and authenticated Azure access.
 metadata:
   author: qiaozha
-  version: "2.0"
+  version: "2.2"
 ---
 
 # Define infrastructure with iac-composer
@@ -14,14 +14,26 @@ Turn the requested Azure architecture into repeatable, checked-in source while
 keeping infrastructure provisioning and application deployment in explicit
 business order.
 
-This skill consumes an already selected resource plan or authored provisioning
-source. Cloud intent recognition, architecture planning, and contract-to-code
-generation are owned by the separate `azure-infrastructure` tool, not this
-runtime. Do not infer services or generate resource contracts in this workflow.
+This is the infrastructure implementation workflow, not an architecture
+recognition engine. Resource requirements can come from the user, repository
+evidence, any planning tool or skill, or an existing deployment. No particular
+planner, logical resource-kind vocabulary, or JSON contract is required.
+
+When an implementation method is unspecified in an opted-in workspace, prefer
+TypeScript with `@azure/provisioning-*` resource constructs and `iac-composer`
+composition and lifecycle helpers. Keep TypeScript as the source of truth;
+Bicep and azd manifests are generated artifacts. Honor explicit tool choices
+and existing compatible IaC conventions instead of migrating them implicitly.
 
 Do not apply this skill to advice-only or architecture-plan-only requests. It
 starts when direct IaC authoring, local validation, or execution is
 requested.
+
+If architectural decisions are unresolved, obtain them from the user or an
+appropriate planning workflow, then resume implementation here. Do not require
+or repeat a specific planner. The planner-neutral MCP entry point is
+`iac_composer_get_context`; `iac_composer_get_reference` retrieves actual
+installed provisioning-library and runtime-helper TypeScript declarations.
 
 ## Guardrails
 

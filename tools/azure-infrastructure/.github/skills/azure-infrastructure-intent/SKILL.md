@@ -1,14 +1,31 @@
 ---
 name: azure-infrastructure-intent
-description: Recognize Azure infrastructure intent, select a cost-conscious Well-Architected resource plan, and generate TypeScript infrastructure with the separate azure-infrastructure tool. Use for sparse workload requests, application analysis, implementation contracts, or contract-to-code generation from a complete plan. Skip intent recognition when the resource plan is already complete. iac-composer only authors and executes ordered IaC.
+description: Recognize Azure workload intent and select a cost-conscious architecture when planning is needed, or generate TypeScript when the separate azure-infrastructure contract generator is explicitly chosen. This is an optional planning/generation workflow, not a prerequisite for implementing Azure resources with iac-composer. Skip service selection for a complete plan. Honor explicit tools and existing IaC conventions. Not for ordinary direct TypeScript resource authoring, inventory, cost-only questions, or unrelated production diagnostics.
 license: MIT
 compatibility: Requires the azure-infrastructure package and Node.js 20.6 or newer for local generation. Generated deployments use iac-composer; Azure validation and deployment require azd, Azure CLI, and authenticated Azure access.
 metadata:
   author: qiaozha
-  version: "2.0"
+  version: "2.2"
 ---
 
 # Infer Azure intent and generate infrastructure
+
+## Workspace routing
+
+Use this optional workflow for architecture recognition or when its
+contract-to-code generator is chosen. It is not the mandatory front door for
+resource implementation: the `iac-composer` skill can implement requirements
+from any planner or the user directly with TypeScript provisioning libraries.
+Honor explicit tool choices, existing IaC conventions and higher-priority
+instructions. Do not replace Terraform, Bicep, or azd implicitly.
+
+An existing complete plan skips service selection. Direct resource authoring
+and existing deployment programs go to `iac-composer`, without converting the
+plan into this generator's input format unless generation is requested. This
+optional tool's MCP entry point is `azure_infrastructure_get_context`; the
+independent implementation entry point is `iac_composer_get_context`.
+
+## Desired outcome
 
 Translate the user's desired outcome and repository evidence into the smallest
 complete Azure architecture that is secure, operable, scalable, and
@@ -18,12 +35,13 @@ The customer-visible boundary is `implementation-contract.json`. Internal
 reference matching can improve completeness, but must never appear in that
 contract. If provenance is explicitly requested, provide it separately.
 
-Unless the user explicitly asks only for advice or a plan, continue through
-infrastructure generation and local validation with `azure-infrastructure`.
-Read [the contract workflow](references/contract-workflow.md) for generation
-and [the implementation handoff](references/implementation-contract-handoff.md)
-for plan validation. Apply the `iac-composer` skill only for direct composition
-or execution of the resulting deployment source.
+Unless the user asks only for advice or a plan, hand the selected resource
+requirements to the `iac-composer` implementation skill for TypeScript
+provisioning-library authoring and local validation. Use this package's
+contract-to-code generator only when that workflow is chosen; read
+[the contract workflow](references/contract-workflow.md) and
+[the implementation handoff](references/implementation-contract-handoff.md)
+for that optional route.
 
 For an explicit advice-only or plan-only request, complete service selection
 and the Well-Architected review within this skill and stop. Do not invoke
@@ -34,8 +52,9 @@ user requests infrastructure implementation.
 
 - Inspect the application before asking infrastructure questions.
 - If the user already supplied a complete resource plan, do not repeat intent
-  recognition or reconsider the architecture. Start with plan validation and
-  generation; use direct IaC authoring when the plan requires it.
+  recognition or reconsider the architecture. Preserve the plan and hand it
+  to implementation; use this generator's contracts only if generation is
+  chosen.
 - Infer routine choices and state assumptions instead of making the user design
   Azure resources.
 - Ask only when an unresolved choice would materially change data semantics,
@@ -200,7 +219,7 @@ Resolve missing baseline controls before authoring. For intentional deviations,
 record the affected pillar, rationale, tradeoff, and trigger for revisiting the
 decision.
 
-### 7. Generate infrastructure with azure-infrastructure
+### 7. Hand off to infrastructure implementation
 
 Build a resource graph with:
 
@@ -212,7 +231,8 @@ Build a resource graph with:
 - identity and RBAC edges;
 - lifecycle actions that occur after provisioning.
 
-Create an implementation contract that conforms to
+When this planning workflow's implementation contract is requested, create
+one that conforms to
 [the implementation contract schema](references/implementation-contract.md).
 The contract is the customer-visible handoff and contains only the inferred
 workload design:
@@ -230,34 +250,33 @@ service choices from user requirements and repository evidence, never by
 saying that the workload matches a reference example.
 
 Validate the [implementation handoff](references/implementation-contract-handoff.md),
-then choose the authoring route:
+when using its contract workflow, then choose the authoring route:
 
-- use contract-driven generation only when every required resource and
+- use contract-driven generation only when that workflow is chosen and every required resource and
   Well-Architected property is supported by the contract. Read
   [the contract workflow](references/contract-workflow.md) and run
   `azure-infrastructure generate`;
-- use direct TypeScript authoring when a service, SKU, network control,
-  diagnostic setting, backup policy, scaling rule, or reliability requirement
-  is not expressible by the contract; apply the `iac-composer` skill for direct
-  composition, not service selection;
+- otherwise hand the resource requirements directly to the `iac-composer`
+  skill for TypeScript provisioning-library authoring and ordered execution,
+  without requiring translation into generator inputs;
 - use a deliberate hybrid only when the repository already has that pattern
   and ownership remains unambiguous;
 - change authored inputs, not generated Bicep or azd artifacts;
 - provision producers before consumers and wire values through declared
   outputs rather than reconstructed names.
 
-Do not stop after producing a service list. First create
-`implementation-contract.json`. If the user requested only the implementation
-contract, stop without generation or execution. Otherwise, use the contract to
-create the resource requirements and solution contracts or direct TypeScript
-provisioning layers, deployment program, environment parameters, and required
-package updates.
+Do not stop at a service list when implementation was requested: continue into
+TypeScript provisioning layers, deployment program, environment parameters and
+required package updates through the implementation skill. A complete selected
+plan does not require `implementation-contract.json` or generator input files
+to use iac-composer. If the user requested only a plan or contract, stop without
+source generation or execution.
 
 ### 8. Verify the emitted infrastructure
 
 Use the repository's existing format, typecheck, and test commands, then:
 
-1. Run the narrowest relevant `azure-infrastructure` generation validation.
+1. If this generator was used, run its narrowest relevant validation.
 2. Typecheck generated or directly authored deployment source.
 3. Run `iac-composer` with `--dry-run`.
 4. Inspect the generated Bicep and `azure.yaml` for the actual selected SKUs,

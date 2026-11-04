@@ -12,6 +12,24 @@ import { pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
 import { getAzdProject, iacComposerAzdTemplate } from "./azd.js";
 import { importTypeScript } from "./typescript-loader.js";
+import { IacComposerError } from "./diagnostics.js";
+import type { DeploymentEvent, StepEvent } from "./report.js";
+
+export { IacComposerError, type Diagnostic } from "./diagnostics.js";
+export type { DeploymentEvent, StepEvent, ArtifactEvent, ExecutionReport } from "./report.js";
+export { describe as describeRuntimeCapabilities, type DiscoveryTopic } from "./discovery.js";
+export {
+  getIacComposerContext,
+  implementationTopics,
+  type ImplementationTopic,
+} from "./authoring-context.js";
+export { getTypeScriptReference, type TypeScriptReference } from "./sdk-reference.js";
+export {
+  createWorkspacePaths,
+  containsPath,
+  workspaceError,
+  type WorkspacePaths,
+} from "./workspace.js";
 
 export {
   AzdProject,
@@ -102,6 +120,7 @@ export interface DeploymentOptions {
   component?: string;
   dryRun?: boolean;
   log?: (message: string) => void;
+  onEvent?: (event: DeploymentEvent) => void;
 }
 
 export type DeploymentProgram = (deployment: Deployment) => Promise<void>;
@@ -129,6 +148,7 @@ export class Deployment {
 
   readonly #log: (message: string) => void;
   readonly #layersByProject = new Map<string, string[]>();
+  #events: { nextId: number; onEvent?: (event: DeploymentEvent) => void };
 
   constructor(options: DeploymentOptions = {}) {
     this.projectDirectory = resolve(options.projectDirectory ?? process.cwd());
@@ -136,16 +156,19 @@ export class Deployment {
     this.component = options.component;
     this.dryRun = options.dryRun ?? false;
     this.#log = options.log ?? console.log;
+    this.#events = { nextId: 0, onEvent: options.onEvent };
   }
 
   inDirectory(projectDirectory: string): Deployment {
-    return new Deployment({
+    const child = new Deployment({
       projectDirectory,
       environment: this.environment,
       component: this.component,
       dryRun: this.dryRun,
       log: this.#log,
     });
+    child.#events = this.#events;
+    return child;
   }
 
   async env(name: string, values: NodeJS.ProcessEnv): Promise<void> {
@@ -157,17 +180,7 @@ export class Deployment {
   async provision(name: string, options: ProvisionOptions): Promise<ProvisionOutputs> {
     let outputs: ProvisionOutputs = {};
     await this.#step("provision", name, async () => {
-      if (
-        options.layer &&
-        (options.entrypoint ||
-          options.outputDirectory ||
-          options.compiler ||
-          options.artifactsDirectory)
-      ) {
-        throw new Error(
-          "Provisioning with a layer cannot also specify source or output options.",
-        );
-      }
+      validateProvisionOptions(options);
       const outputDirectory = resolve(
         this.projectDirectory,
         options.layer?.outputDirectory ??
@@ -177,18 +190,24 @@ export class Deployment {
       const layer = inferLayerName(outputDirectory);
       const azdProjectDirectory = layer ? dirname(outputDirectory) : outputDirectory;
       const entrypoint = options.layer?.entrypoint ?? options.entrypoint;
+      const requiredFiles = [
+        options.templateFile ?? "main.bicep",
+        options.parametersFile ?? "main.bicepparam",
+      ];
       if (options.compiler && options.artifactsDirectory) {
         await this.#execute(options.compiler);
         await copyProvisioningArtifacts(
           resolve(this.projectDirectory, options.artifactsDirectory),
           outputDirectory,
           azdProjectDirectory,
+          requiredFiles,
         );
       } else if (entrypoint) {
         await compileProvisioning(
           resolve(this.projectDirectory, entrypoint),
           outputDirectory,
           azdProjectDirectory,
+          requiredFiles,
         );
       } else {
         throw new Error(
@@ -264,6 +283,17 @@ export class Deployment {
         location: options.location ?? process.env.AZURE_LOCATION,
         values: environmentValues,
       });
+      this.#events.onEvent?.({
+        type: "artifacts",
+        step: name,
+        projectDirectory: azdProjectDirectory,
+        outputDirectory,
+        templateFile,
+        parametersFile,
+        manifestFile: resolve(azdProjectDirectory, "azure.yaml"),
+        ...(layer ? { layer } : {}),
+        dependsOn,
+      });
       outputs = await project.provision();
     }, true);
     return outputs;
@@ -309,14 +339,31 @@ export class Deployment {
   }
 
   async #step(
-    kind: string,
+    kind: StepEvent["kind"],
     name: string,
     action: () => Promise<void>,
     runInDryRun = false,
   ): Promise<void> {
     this.#log(`[iac-composer] ${this.dryRun ? "DRY" : "RUN"} ${kind}: ${name}`);
-    if (this.dryRun && !runInDryRun) return;
-    await action();
+    const step = {
+      type: "step" as const,
+      id: ++this.#events.nextId,
+      kind,
+      name,
+      projectDirectory: this.projectDirectory,
+    };
+    if (this.dryRun && !runInDryRun) {
+      this.#events.onEvent?.({ ...step, status: "skipped" });
+      return;
+    }
+    this.#events.onEvent?.({ ...step, status: "started" });
+    try {
+      await action();
+    } catch (error) {
+      this.#events.onEvent?.({ ...step, status: "failed" });
+      throw error;
+    }
+    this.#events.onEvent?.({ ...step, status: this.dryRun ? "previewed" : "succeeded" });
     if (!this.dryRun) this.#log(`[iac-composer] DONE ${kind}: ${name}`);
   }
 
@@ -342,17 +389,33 @@ export class Deployment {
         stderr += chunk;
         process.stderr.write(chunk);
       });
-      child.on("error", reject);
+      child.on("error", (error: NodeJS.ErrnoException) => {
+        reject(new IacComposerError({
+          code: error.code === "ENOENT" ? "COMMAND_NOT_FOUND" : "COMMAND_START_FAILED",
+          category: "execution",
+          message: `Could not start '${command.command}'.`,
+          target: command.command,
+          repair: "Check that the executable is installed, the working directory exists, and permissions allow execution.",
+        }, { cause: error, message: error.message }));
+      });
       child.on("exit", (code, signal) => {
         if (code === 0) {
           resolvePromise(stdout);
           return;
         }
         reject(
-          new Error(
-            `${command.command} exited with ${signal ? `signal ${signal}` : `code ${code}`}` +
+          new IacComposerError({
+            code: "COMMAND_FAILED",
+            category: "execution",
+            message: `${command.command} exited with ${signal ? `signal ${signal}` : `code ${code}`}`,
+            target: command.command,
+            exitCode: code,
+            ...(signal ? { signal } : {}),
+            repair: "Inspect stderr and the failed step. Check external state before retrying; completed actions are not rolled back.",
+          }, {
+            message: `${command.command} exited with ${signal ? `signal ${signal}` : `code ${code}`}` +
               (stderr.trim() ? `: ${stderr.trim()}` : ""),
-          ),
+          }),
         );
       });
     });
@@ -363,6 +426,88 @@ function inferLayerName(outputDirectory: string): string | undefined {
   return basename(dirname(outputDirectory)) === ".generated"
     ? basename(outputDirectory)
     : undefined;
+}
+
+function validateProvisionOptions(options: ProvisionOptions): void {
+  let message: string | undefined;
+  if (
+    options.layer &&
+    [options.entrypoint, options.outputDirectory, options.compiler, options.artifactsDirectory]
+      .some((value) => value !== undefined)
+  ) {
+    message = "Provisioning with a layer cannot also specify source or output options.";
+  } else if (
+    options.entrypoint !== undefined &&
+    (options.compiler !== undefined || options.artifactsDirectory !== undefined)
+  ) {
+    message = "Provisioning cannot combine an entrypoint with compiler or artifactsDirectory.";
+  } else if (
+    (options.compiler !== undefined) !== (options.artifactsDirectory !== undefined)
+  ) {
+    message = "Provisioning with a compiler requires both compiler and artifactsDirectory.";
+  } else if (!options.layer?.entrypoint && !options.entrypoint && !options.compiler) {
+    message = "Provisioning requires either an entrypoint or a compiler with artifactsDirectory.";
+  }
+  if (message) {
+    throw new IacComposerError({
+      code: "PROVISION_SOURCE_INVALID",
+      category: "configuration",
+      message,
+      property: "provision",
+      expected: "Exactly one source: layer, entrypoint, or compiler with artifactsDirectory.",
+      repair: "Choose one provisioning source and remove conflicting options.",
+    });
+  }
+}
+
+function validateRenderedFiles(
+  outputDirectory: string,
+  files: readonly RenderedFile[],
+  requiredFiles: readonly string[],
+): void {
+  const paths = new Set<string>();
+  for (const file of files) {
+    const path = resolveOutputPath(outputDirectory, file.path);
+    if (paths.has(path)) {
+      throw new IacComposerError({
+        code: "ARTIFACT_PATH_DUPLICATE",
+        category: "artifact",
+        message: `Provisioning produced duplicate output path '${file.path}'.`,
+        target: file.path,
+        property: "outputBicep.path",
+        repair: "Emit each normalized file path only once.",
+      });
+    }
+    paths.add(path);
+  }
+  for (const path of paths) {
+    let parent = dirname(path);
+    while (parent !== outputDirectory) {
+      if (paths.has(parent)) {
+        throw new IacComposerError({
+          code: "ARTIFACT_PATH_CONFLICT",
+          category: "artifact",
+          message: `Provisioning output '${parent}' is both a file and a directory.`,
+          target: parent,
+          property: "outputBicep.path",
+          repair: "Rename the conflicting file or place nested files in a different directory.",
+        });
+      }
+      parent = dirname(parent);
+    }
+  }
+  for (const file of requiredFiles) {
+    if (!paths.has(resolveOutputPath(outputDirectory, file))) {
+      throw new IacComposerError({
+        code: "ARTIFACT_REQUIRED",
+        category: "artifact",
+        message: `Provisioning did not emit required artifact '${file}'.`,
+        target: file,
+        expected: "The selected templateFile and parametersFile must exist in the rendered output.",
+        repair: "Emit this file from the provisioning source, or set templateFile/parametersFile to an emitted path.",
+      });
+    }
+  }
 }
 
 function relativeAzdPath(projectDirectory: string, outputDirectory: string): string {
@@ -379,35 +524,58 @@ export async function compileProvisioning(
   entrypoint: string,
   outputDirectory: string,
   generatedFilesRoot = outputDirectory,
+  requiredFiles: readonly string[] = [],
 ): Promise<void> {
   const resolvedEntrypoint = resolve(entrypoint);
-  const module = (await importTypeScript(
-    pathToFileURL(resolvedEntrypoint).href,
-  )) as Record<string, unknown>;
+  let module: Record<string, unknown>;
+  try {
+    module = (await importTypeScript(
+      pathToFileURL(resolvedEntrypoint).href,
+    )) as Record<string, unknown>;
+  } catch (error) {
+    if (error instanceof IacComposerError) throw error;
+    throw new IacComposerError({
+      code: "PROVISIONING_LOAD_FAILED",
+      category: "compilation",
+      message: `Could not load provisioning entrypoint '${resolvedEntrypoint}'.`,
+      target: resolvedEntrypoint,
+      repair: "Check the entrypoint path, syntax, package module type, and provisioning SDK dependencies; run the project's typecheck.",
+    }, { cause: error, message: error instanceof Error ? error.message : String(error) });
+  }
   const files = resolveRenderedFiles(module, resolvedEntrypoint);
 
-  await installRenderedFiles(outputDirectory, files, generatedFilesRoot);
+  await installRenderedFiles(outputDirectory, files, generatedFilesRoot, requiredFiles);
 }
 
 export async function copyProvisioningArtifacts(
   artifactsDirectory: string,
   outputDirectory: string,
   generatedFilesRoot = outputDirectory,
+  requiredFiles: readonly string[] = [],
 ): Promise<void> {
   const files = await readRenderedDirectory(artifactsDirectory);
   if (files.length === 0) {
-    throw new Error(`Provisioning compiler produced no files in '${artifactsDirectory}'.`);
+    throw new IacComposerError({
+      code: "ARTIFACTS_EMPTY",
+      category: "artifact",
+      message: `Provisioning compiler produced no files in '${artifactsDirectory}'.`,
+      target: artifactsDirectory,
+      repair: "Configure the compiler to emit Bicep artifacts into artifactsDirectory.",
+    });
   }
-  await installRenderedFiles(outputDirectory, files, generatedFilesRoot);
+  await installRenderedFiles(outputDirectory, files, generatedFilesRoot, requiredFiles);
 }
 
 async function installRenderedFiles(
   outputDirectory: string,
   files: readonly RenderedFile[],
   generatedFilesRoot: string,
+  requiredFiles: readonly string[],
 ): Promise<void> {
   outputDirectory = resolve(outputDirectory);
   generatedFilesRoot = resolve(generatedFilesRoot);
+  validateRenderedFiles(outputDirectory, files, requiredFiles);
+  relativeGeneratedPath(generatedFilesRoot, outputDirectory);
   await mkdir(outputDirectory, { recursive: true });
   await mkdir(generatedFilesRoot, { recursive: true });
   await rejectLegacyGeneratedManifest(
@@ -425,6 +593,9 @@ async function installRenderedFiles(
       generatedFilesRoot,
       generatedPaths,
     );
+  }
+  for (const generatedPath of generatedPaths) {
+    resolveOutputPath(generatedFilesRoot, generatedPath);
   }
 
   const outputPrefix = relativeGeneratedPath(generatedFilesRoot, outputDirectory);
@@ -577,8 +748,23 @@ async function readGeneratedManifest(manifestPath: string): Promise<readonly str
 function resolveOutputPath(outputDirectory: string, filePath: string): string {
   const outputPath = resolve(outputDirectory, filePath);
   const relativePath = relative(outputDirectory, outputPath);
-  if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
-    throw new Error(`Provisioning output escapes its directory: ${filePath}`);
+  if (
+    !filePath.trim() ||
+    isAbsolute(filePath) ||
+    !relativePath ||
+    relativePath === ".." ||
+    relativePath.startsWith(`..${sep}`) ||
+    isAbsolute(relativePath)
+  ) {
+    throw new IacComposerError({
+      code: "ARTIFACT_PATH_INVALID",
+      category: "artifact",
+      message: `Provisioning output escapes its directory or has an invalid path: ${filePath}`,
+      target: filePath,
+      property: "outputBicep.path",
+      expected: "A non-empty relative file path inside the output directory.",
+      repair: "Correct the authored output path; do not modify generated artifacts.",
+    });
   }
   return outputPath;
 }
@@ -598,9 +784,15 @@ function resolveRenderedFiles(
       ? (defaultExport as Record<string, unknown>).outputBicep
       : undefined);
   if (!Array.isArray(files) || files.length === 0 || !files.every(isRenderedFile)) {
-    throw new Error(
-      `Provisioning entrypoint '${entrypoint}' must export a non-empty outputBicep array.`,
-    );
+    throw new IacComposerError({
+      code: "OUTPUT_BICEP_INVALID",
+      category: "compilation",
+      message: `Provisioning entrypoint '${entrypoint}' must export a non-empty outputBicep array.`,
+      target: entrypoint,
+      property: "outputBicep",
+      expected: "A non-empty array of { path: string, contents: string }.",
+      repair: "Export rendered Bicep files as outputBicep from the provisioning entrypoint.",
+    });
   }
   return files;
 }
@@ -622,9 +814,14 @@ async function collectBicepEnvironmentValues(
 ): Promise<Record<string, string | undefined>> {
   if (extname(parametersFile) !== ".bicepparam") {
     if (Object.keys(overrides).length > 0) {
-      throw new Error(
-        "Provisioning parameter overrides require a .bicepparam file.",
-      );
+      throw new IacComposerError({
+        code: "PARAMETER_FILE_UNSUPPORTED",
+        category: "configuration",
+        message: "Provisioning parameter overrides require a .bicepparam file.",
+        target: parametersFile,
+        property: "parametersFile",
+        repair: "Use a .bicepparam file for parameter overrides.",
+      });
     }
     return {};
   }
@@ -645,10 +842,14 @@ async function collectBicepEnvironmentValues(
     ).exec(source);
     const environmentName = binding?.[1];
     if (!environmentName) {
-      throw new Error(
-        `Bicep parameter '${parameterName}' must bind directly to ` +
-          "readEnvironmentVariable() for an azd provision override.",
-      );
+      throw new IacComposerError({
+        code: "PARAMETER_BINDING_REQUIRED",
+        category: "configuration",
+        message: `Bicep parameter '${parameterName}' must bind directly to readEnvironmentVariable() for an azd provision override.`,
+        target: parametersFile,
+        property: `parameters.${parameterName}`,
+        repair: "Bind this parameter directly to readEnvironmentVariable() in the authored parameter source, or remove the override.",
+      });
     }
     values[environmentName] = String(parameterValue);
   }

@@ -41,6 +41,12 @@ import {
 } from "./generation/provisioning/index.js";
 import { planResourceValidation } from "./validation/resources/plan.js";
 import { loadServiceHelperSources } from "./generation/rendering/service-helpers.js";
+import {
+  containsPath,
+  createGenerationWorkspace,
+  workspaceError,
+  type GenerationWorkspace,
+} from "./generation/workspace.js";
 
 const chatbotServiceManagementReference =
   "c29c71f8-2db7-4d9e-bf8b-e6b0965ecde4";
@@ -56,6 +62,7 @@ export interface GenerateDeploymentCodeOptions {
   resourcesFile: string;
   solutionFile: string;
   outputDirectory: string;
+  workspaceRoot?: string;
   onProgress?: (
     progress: DeploymentCodeGenerationProgress,
   ) => void | Promise<void>;
@@ -84,9 +91,21 @@ export interface GenerateDeploymentCodeResult {
 export async function generateDeploymentCode(
   options: GenerateDeploymentCodeOptions,
 ): Promise<GenerateDeploymentCodeResult> {
-  const resourcesFile = resolve(options.resourcesFile);
-  const solutionFile = resolve(options.solutionFile);
-  const outputDirectory = resolve(options.outputDirectory);
+  const workspace = options.workspaceRoot === undefined
+    ? undefined
+    : await createGenerationWorkspace(options.workspaceRoot);
+  const resourcesFile = workspace
+    ? await workspace.resolveRead(options.resourcesFile)
+    : resolve(options.resourcesFile);
+  const solutionFile = workspace
+    ? await workspace.resolveRead(options.solutionFile)
+    : resolve(options.solutionFile);
+  const outputDirectory = workspace
+    ? await workspace.resolveWrite(options.outputDirectory)
+    : resolve(options.outputDirectory);
+  if (workspace) {
+    rejectInputOverlap(outputDirectory, [resourcesFile, solutionFile]);
+  }
   await reportGenerationProgress(options, {
     stage: "loadingInputs",
     percent: 5,
@@ -97,30 +116,41 @@ export async function generateDeploymentCode(
     loadResourceRequirements(resourcesFile),
     loadDeploymentSolution(solutionFile),
   ]);
-  validateDeploymentContracts(requirements, solution);
-  const validationPlan = planResourceValidation(requirements, solution);
   await reportGenerationProgress(options, {
     stage: "validatingContracts",
     percent: 20,
-    message: "Validated deployment contracts.",
+    message: "Validating deployment contracts.",
     outputDirectory,
   });
+  validateDeploymentContracts(requirements, solution);
+  const validationPlan = planResourceValidation(requirements, solution);
 
-  const orderedComponents = orderDeploymentComponents(requirements, solution);
   await reportGenerationProgress(options, {
     stage: "planningComponents",
     percent: 35,
-    message: `Planned ${orderedComponents.length} deployment components.`,
+    message: "Planning deployment components.",
     outputDirectory,
-    componentCount: orderedComponents.length,
+    componentCount: solution.components.length,
   });
+  const orderedComponents = orderDeploymentComponents(requirements, solution);
   const componentNames = new Map(
     orderedComponents.map((component) => [component, typescriptIdentifier(component)]),
   );
   ensureUniqueIdentifiers(componentNames);
   const solutionDirectory = dirname(solutionFile);
   const packagePath = relative(outputDirectory, solutionDirectory) || ".";
-  const templates = await loadWorkflowTemplates(requirements, solutionDirectory);
+  if (workspace) {
+    for (const source of [
+      ...requirements.resources.map((resource) => resource.source),
+      ...solution.components.map((component) => component.source),
+    ]) {
+      if (source !== undefined) {
+        const path = await workspace.resolveRead(resolve(solutionDirectory, source), true);
+        rejectInputOverlap(outputDirectory, [path]);
+      }
+    }
+  }
+  const templates = await loadWorkflowTemplates(requirements, solutionDirectory, workspace);
   const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const runtimeRoot = resolve(
     dirname(fileURLToPath(import.meta.resolve("iac-composer"))),
@@ -136,10 +166,6 @@ export async function generateDeploymentCode(
     templates,
     serviceManagementReference: chatbotServiceManagementReference,
   } as const;
-  const provisioningSources = renderProvisioningSources(sourceOptions);
-  const hasEntra = hasEntraApplications(sourceOptions);
-  const identityConfigurationOwner = entraConfigurationOwner(sourceOptions);
-  const files = new Map<string, string>();
   await reportGenerationProgress(options, {
     stage: "renderingSources",
     percent: 50,
@@ -147,6 +173,10 @@ export async function generateDeploymentCode(
     outputDirectory,
     componentCount: orderedComponents.length,
   });
+  const provisioningSources = renderProvisioningSources(sourceOptions);
+  const hasEntra = hasEntraApplications(sourceOptions);
+  const identityConfigurationOwner = entraConfigurationOwner(sourceOptions);
+  const files = new Map<string, string>();
 
   files.set(
     "package.json",
@@ -273,7 +303,7 @@ export async function generateDeploymentCode(
     componentCount: orderedComponents.length,
     fileCount: files.size,
   });
-  await installGeneratedFiles(outputDirectory, files);
+  await installGeneratedFiles(outputDirectory, files, { workspace });
   await reportGenerationProgress(options, {
     stage: "completed",
     percent: 100,
@@ -298,6 +328,7 @@ async function reportGenerationProgress(
 async function loadWorkflowTemplates(
   requirements: ResourceRequirements,
   solutionDirectory: string,
+  workspace?: GenerationWorkspace,
 ): Promise<Readonly<Record<string, unknown>>> {
   const templates: Record<string, unknown> = {};
   for (const resource of requirements.resources) {
@@ -306,9 +337,22 @@ async function loadWorkflowTemplates(
       throw new Error(`Workflow resource '${resource.id}' requires a source template.`);
     }
     const templatePath = resolvePackagePath(solutionDirectory, resource.source);
+    if (workspace) await workspace.resolveRead(templatePath);
     templates[resource.id] = await readJson(templatePath);
   }
   return templates;
+}
+
+function rejectInputOverlap(outputDirectory: string, inputs: readonly string[]): void {
+  const input = inputs.find((path) => containsPath(outputDirectory, path));
+  if (input) {
+    throw workspaceError(
+      "INPUT_OUTPUT_OVERLAP",
+      "Generation output must not contain a plan or application source path.",
+      input,
+      "Choose an output directory separate from the plan files, templates, and application sources.",
+    );
+  }
 }
 
 function resolvePackagePath(packageDirectory: string, path: string): string {

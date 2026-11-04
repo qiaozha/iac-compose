@@ -1,0 +1,12 @@
+[mcp_servers.iac-composer]
+command = "node"
+args = [
+  "/REPLACE/IAC_COMPOSER_ROOT/dist/mcp/cli.js",
+  "--workspace",
+  "/REPLACE/WORKSPACE_ROOT"
+]
+cwd = "/REPLACE/WORKSPACE_ROOT"
+enabled_tools = [
+  "iac_composer_get_context",
+  "iac_composer_get_reference"
+]

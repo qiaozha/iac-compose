@@ -4,7 +4,8 @@
   "description": "Recognize Azure infrastructure intent and generate ordered IaC deployment source.",
   "type": "module",
   "bin": {
-    "azure-infrastructure": "dist/cli.js"
+    "azure-infrastructure": "dist/cli.js",
+    "azure-infrastructure-mcp": "dist/mcp/cli.js"
   },
   "exports": {
     ".": {
@@ -28,10 +29,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@modelcontextprotocol/server": "2.4.0",
     "iac-composer": "file:../..",
-    "yaml": "^2.9.1"
+    "yaml": "^2.9.1",
+    "zod": "4.6.7"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
     "@types/node": "^24.0.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.0"

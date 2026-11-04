@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "1.0",
+  "caseId": null,
+  "condition": null,
+  "host": null,
+  "hostVersion": null,
+  "model": null,
+  "toolchainRevision": null,
+  "planningProvider": null,
+  "plannerSpecificContractRequired": null,
+  "status": "not-executed",
+  "availability": null,
+  "selectedRoute": null,
+  "correctHandoff": null,
+  "localOutputValid": null,
+  "agentToolCallsBeforeSelection": null,
+  "documentationReadsBeforeSelection": null,
+  "tokens": null,
+  "duplicateWorkflowLoads": null,
+  "unauthorizedOperationAttempts": null,
+  "manualInterventions": null,
+  "evidence": []
+}

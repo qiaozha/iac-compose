@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "iac-composer": {
+      "command": "node",
+      "args": [
+        "${IAC_COMPOSER_ROOT}/dist/mcp/cli.js",
+        "--workspace",
+        "${IAC_COMPOSER_WORKSPACE_ROOT}"
+      ]
+    }
+  }
+}
